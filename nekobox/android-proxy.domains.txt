@@ -1,0 +1,3 @@
+domain:ntc.party
+domain:tixati.com
+domain:tixati.net

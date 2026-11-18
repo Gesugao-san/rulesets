@@ -1,0 +1,1 @@
+ruleset:https://raw.githubusercontent.com/Gesugao-san/rulesets/release/sing-box/p2p-spies.srs

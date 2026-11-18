@@ -6,6 +6,13 @@
 
 Каждая сборка также помечена тегом `build-YYYY-MM-DD-N` (N — номер прогона CI). Чтобы закрепить клиент на сборке, замените в ссылке `/release/` на `/<тег>/`. Профили Throne внутри тега всё равно берут `.srs` из ветки `release`.
 
+## nekobox
+
+- [`nekobox/android-block.ips.txt`](https://raw.githubusercontent.com/Gesugao-san/rulesets/release/nekobox/android-block.ips.txt)
+- [`nekobox/android-proxy.domains.txt`](https://raw.githubusercontent.com/Gesugao-san/rulesets/release/nekobox/android-proxy.domains.txt)
+- [`nekobox/desktop-block.txt`](https://raw.githubusercontent.com/Gesugao-san/rulesets/release/nekobox/desktop-block.txt)
+- [`nekobox/desktop-proxy.txt`](https://raw.githubusercontent.com/Gesugao-san/rulesets/release/nekobox/desktop-proxy.txt)
+
 ## podkop
 
 - [`podkop/all-block.subnets.lst`](https://raw.githubusercontent.com/Gesugao-san/rulesets/release/podkop/all-block.subnets.lst)
@@ -18,6 +25,10 @@
 - [`qbittorrent/ipfilter.p2p`](https://raw.githubusercontent.com/Gesugao-san/rulesets/release/qbittorrent/ipfilter.p2p)
 - [`qbittorrent/peer_blacklist.txt`](https://raw.githubusercontent.com/Gesugao-san/rulesets/release/qbittorrent/peer_blacklist.txt)
 - [`qbittorrent/update-ipfilter.ps1`](https://raw.githubusercontent.com/Gesugao-san/rulesets/release/qbittorrent/update-ipfilter.ps1)
+
+## resolved
+
+- [`resolved/AS216158.txt`](https://raw.githubusercontent.com/Gesugao-san/rulesets/release/resolved/AS216158.txt)
 
 ## sing-box
 
