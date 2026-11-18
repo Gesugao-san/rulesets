@@ -455,13 +455,22 @@ def throne_link(obj: dict) -> str:
   return "throne://route/" + base64.urlsafe_b64encode(compact).decode("ascii").rstrip("=")
 
 
+def throne_remoteroute_link(url: str, name: str) -> str:
+  """throne://remoteroute/<standard base64 of "url#name">: Import in Throne's route manager
+  turns it into a remote, auto-updating profile (RouteProfile::FromRemoteRoutesLink)."""
+  payload = f"{url}#{urllib.parse.quote(name)}".encode("utf-8")
+  return "throne://remoteroute/" + base64.b64encode(payload).decode("ascii")
+
+
 def gen_throne(out: Path, meta: dict, lists: dict[str, RuleList], profiles: dict[str, dict]) -> list[str]:
-  """Throne: one link file per profile."""
+  """Throne: the profile itself (<name>.txt) and a one-step link that subscribes to it (<name>.remoteroute.txt)."""
   files = []
   for name, profile in profiles.items():
     rel = f"throne/{name}.txt"
     write_lines(out / rel, [throne_link(throne_profile(meta, name, profile, lists))])
-    files.append(rel)
+    sub_rel = f"throne/{name}.remoteroute.txt"
+    write_lines(out / sub_rel, [throne_remoteroute_link(raw_url(meta, rel), profile.get("name", name))])
+    files += [rel, sub_rel]
   return files
 
 

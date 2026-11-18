@@ -8,7 +8,7 @@ and CI builds every client format from it into the [`release`](../../tree/releas
 | Format | Contents | Clients | Where in `release` |
 |---|---|---|---|
 | `.srs`, `.json` | sing-box rule-set (version 3): domains and IP subnets | [sing-box](https://sing-box.sagernet.org) — any<br>[Karing](https://github.com/KaringX/karing) — Android, iOS, Windows, macOS, Linux<br>[Throne](https://github.com/throneproj/Throne) and [NekoBox](https://github.com/qr243vbi/nekobox) load it by link | `sing-box/` |
-| `throne://route/…` | remote route profile with links to the `.srs` files | [Throne](https://github.com/throneproj/Throne) — Windows, Linux, macOS | `throne/` |
+| `throne://route/…`<br>`throne://remoteroute/…` | route profile with links to the `.srs` files;<br>one-step link that subscribes to it | [Throne](https://github.com/throneproj/Throne) — Windows, Linux, macOS | `throne/` |
 | `ruleset:<link>` lines | links to the `.srs` files, one line per list | [NekoBox](https://github.com/qr243vbi/nekobox) — Windows, Linux | `nekobox/desktop-*` |
 | `domain:` and CIDR lines | domains and IP subnets to paste by hand | [NekoBox for Android](https://github.com/MatsuriDayo/NekoBoxForAndroid) — Android | `nekobox/android-*` |
 | `.lst` | domains and IPv4 subnets, one per line, per list and aggregated per action | [podkop](https://github.com/itdoginfo/podkop) — OpenWrt | `podkop/` |
@@ -43,14 +43,19 @@ IPv6 is not exported to podkop: its subnet lists accept IPv4 only.
 
 ### Throne
 
-1. Routing settings → add a **remote** route profile, URL:
-   ```
-   https://raw.githubusercontent.com/Gesugao-san/rulesets/release/throne/selective.txt
-   ```
-2. Enable auto-update and select the profile.
+**One step:** copy this link, open the routes manager in Throne and press **Import** — it reads the clipboard,
+asks for confirmation and adds a remote, auto-updating profile:
+```
+throne://remoteroute/aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0dlc3VnYW8tc2FuL3J1bGVzZXRzL3JlbGVhc2UvdGhyb25lL3NlbGVjdGl2ZS50eHQjR2VzdSUyMHNlbGVjdGl2ZQ==
+```
+**By hand:** add a **remote** route profile with the URL below and enable auto-update:
+```
+https://raw.githubusercontent.com/Gesugao-san/rulesets/release/throne/selective.txt
+```
 
 On every update Throne overwrites the rules of a remote profile — keep personal rules in a separate local profile.
 Throne fetches GitHub links through jsDelivr, so changes arrive with a cache delay.
+Pasting `throne/selective.txt` itself into **Import** creates a one-off local copy that does not update.
 
 ### NekoBox (desktop)
 

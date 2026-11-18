@@ -554,6 +554,27 @@ class OutputTests(unittest.TestCase):
           # Throne accepts a remote rule-set only if the file name contains .srs.
           self.assertTrue(url.startswith("https://") and url.endswith(".srs"), url)
 
+  def test_throne_remoteroute(self):
+    from urllib.parse import urlsplit, unquote
+    for name, profile in self.profiles.items():
+      (link,) = self.read(f"throne/{name}.remoteroute.txt")
+      self.assertTrue(link.startswith("throne://remoteroute/"))
+      # Throne decodes it as standard base64 with AbortOnBase64DecodingErrors.
+      payload = base64.b64decode(link.removeprefix("throne://remoteroute/"), validate=True).decode("utf-8")
+      lines = [line for line in payload.split("\n") if line.strip()]
+      self.assertEqual(len(lines), 1)
+      url = urlsplit(lines[0])
+      self.assertEqual(url.scheme, "https")
+      self.assertTrue(url.path.endswith(f"/throne/{name}.txt"))
+      self.assertEqual(unquote(url.fragment), profile.get("name", name))
+
+  def test_readme_remoteroute_in_sync(self):
+    # README embeds the one-step Throne link; it must match what the build produces.
+    for name in self.profiles:
+      (link,) = self.read(f"throne/{name}.remoteroute.txt")
+      for readme in ("README.md", "README.ru.md"):
+        self.assertIn(link, (REPO_ROOT / readme).read_text(encoding="utf-8"), readme)
+
   def test_singbox_json(self):
     for rel in (f for f in self.files if f.startswith("sing-box/") and f.endswith(".json")):
       data = json.loads((self.out / rel).read_text(encoding="utf-8"))

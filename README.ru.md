@@ -8,7 +8,7 @@
 | Формат | Содержимое | Клиенты | Где лежит в `release` |
 |---|---|---|---|
 | `.srs`, `.json` | rule-set sing-box (version 3): домены и IP-подсети | [sing-box](https://sing-box.sagernet.org) — любая платформа<br>[Karing](https://github.com/KaringX/karing) — Android, iOS, Windows, macOS, Linux<br>[Throne](https://github.com/throneproj/Throne) и [NekoBox](https://github.com/qr243vbi/nekobox) берут его по ссылке | `sing-box/` |
-| `throne://route/…` | удалённый маршрутный профиль со ссылками на `.srs` | [Throne](https://github.com/throneproj/Throne) — Windows, Linux, macOS | `throne/` |
+| `throne://route/…`<br>`throne://remoteroute/…` | маршрутный профиль со ссылками на `.srs`;<br>ссылка, подписывающая на него в один шаг | [Throne](https://github.com/throneproj/Throne) — Windows, Linux, macOS | `throne/` |
 | строки `ruleset:<ссылка>` | ссылки на `.srs`, по строке на список | [NekoBox](https://github.com/qr243vbi/nekobox) — Windows, Linux | `nekobox/desktop-*` |
 | строки `domain:` и CIDR | домены и IP-подсети для ручной вставки | [NekoBox for Android](https://github.com/MatsuriDayo/NekoBoxForAndroid) — Android | `nekobox/android-*` |
 | `.lst` | домены и IPv4-подсети по одной в строке, по спискам и сводные по действию | [podkop](https://github.com/itdoginfo/podkop) — OpenWrt | `podkop/` |
@@ -43,14 +43,19 @@ IPv6 в podkop не попадает: его списки подсетей пр�
 
 ### Throne
 
-1. Настройки маршрутизации → добавить **удалённый** (remote) профиль маршрутов, URL:
-   ```
-   https://raw.githubusercontent.com/Gesugao-san/rulesets/release/throne/selective.txt
-   ```
-2. Включите автообновление и выберите профиль.
+**В один шаг:** скопируйте ссылку, откройте в Throne управление маршрутами и нажмите **Import** — он читает буфер обмена,
+спрашивает подтверждение и добавляет удалённый профиль с автообновлением:
+```
+throne://remoteroute/aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0dlc3VnYW8tc2FuL3J1bGVzZXRzL3JlbGVhc2UvdGhyb25lL3NlbGVjdGl2ZS50eHQjR2VzdSUyMHNlbGVjdGl2ZQ==
+```
+**Вручную:** добавьте **удалённый** (remote) профиль маршрутов с URL ниже и включите автообновление:
+```
+https://raw.githubusercontent.com/Gesugao-san/rulesets/release/throne/selective.txt
+```
 
 При каждом обновлении Throne перезаписывает правила удалённого профиля — личные правила держите в отдельном локальном профиле.
 Ссылки на GitHub Throne берёт через jsDelivr, поэтому изменения доходят с задержкой кэша.
+Если вставить в **Import** содержимое самого `throne/selective.txt`, получится разовая локальная копия без обновлений.
 
 ### NekoBox (ПК)
 
