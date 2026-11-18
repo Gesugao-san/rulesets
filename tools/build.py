@@ -379,28 +379,63 @@ def gen_qbittorrent(out: Path, lists: dict[str, RuleList]) -> list[str]:
   return files
 
 
-def gen_index(out: Path, meta: dict, files: list[str], warnings: list[str]) -> None:
-  """index.json and README.md of the release branch with links to everything built."""
-  index = {"repo": meta["repo"], "branch": meta["branch"], "files": {f: raw_url(meta, f) for f in sorted(files)}, "warnings": warnings}
-  (out / "index.json").write_text(json.dumps(index, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
+# Release README texts per language: file name, language switcher and fixed phrases.
+RELEASE_README = {
+  "en": {
+    "file": "README.md",
+    "switch": "**English** | [Русский](README.ru.md)",
+    "intro": "Generated from `rules.yml` in [{repo}](https://github.com/{repo}). Do not edit this branch.",
+    "pin": (
+      "Every build is also tagged `build-YYYY-MM-DD-N` (N is the CI run number). To pin a client to a build, replace "
+      "`/{branch}/` in a link with `/<tag>/`. Throne profiles inside a tag still load `.srs` "
+      "from the `{branch}` branch."
+    ),
+    "warnings": "Warnings",
+  },
+  "ru": {
+    "file": "README.ru.md",
+    "switch": "[English](README.md) | **Русский**",
+    "intro": "Собрано из `rules.yml` в [{repo}](https://github.com/{repo}). Эту ветку не править.",
+    "pin": (
+      "Каждая сборка также помечена тегом `build-YYYY-MM-DD-N` (N — номер прогона CI). Чтобы закрепить клиент на сборке, "
+      "замените в ссылке `/{branch}/` на `/<тег>/`. Профили Throne внутри тега всё равно берут `.srs` "
+      "из ветки `{branch}`."
+    ),
+    "warnings": "Предупреждения",
+  },
+}
 
+
+def release_readme(meta: dict, files: list[str], warnings: list[str], texts: dict) -> list[str]:
+  """Lines of one release README: switcher, intro, tag pinning, links by folder, warnings."""
   lines = [
     "# rulesets — release",
     "",
-    f"Generated from `rules.yml` in [{meta['repo']}](https://github.com/{meta['repo']}). Do not edit this branch.",
+    texts["switch"],
+    "",
+    texts["intro"].format(repo=meta["repo"]),
+    "",
+    texts["pin"].format(branch=meta["branch"]),
     "",
   ]
   for folder in sorted({f.split("/")[0] for f in files}):
-    lines.append(f"## {folder}")
-    lines.append("")
-    lines.extend(f"- [`{f}`]({raw_url(meta, f)})" for f in sorted(files) if f.startswith(folder + "/"))
+    lines += [f"## {folder}", ""]
+    lines += [f"- [`{f}`]({raw_url(meta, f)})" for f in sorted(files) if f.startswith(folder + "/")]
     lines.append("")
   if warnings:
-    lines.append("## Warnings")
+    lines += [f"## {texts['warnings']}", ""]
+    lines += [f"- {w}" for w in warnings]
     lines.append("")
-    lines.extend(f"- {w}" for w in warnings)
-    lines.append("")
-  write_lines(out / "README.md", lines[:-1])
+  return lines[:-1]
+
+
+def gen_index(out: Path, meta: dict, files: list[str], warnings: list[str]) -> None:
+  """index.json and README.md / README.ru.md of the release branch with links to everything built."""
+  index = {"repo": meta["repo"], "branch": meta["branch"], "files": {f: raw_url(meta, f) for f in sorted(files)}, "warnings": warnings}
+  (out / "index.json").write_text(json.dumps(index, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
+
+  for texts in RELEASE_README.values():
+    write_lines(out / texts["file"], release_readme(meta, files, warnings, texts))
 
 
 def build(rules_path: Path, out: Path, sing_box: str | None) -> tuple[list[str], list[str]]:

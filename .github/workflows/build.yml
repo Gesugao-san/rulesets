@@ -87,4 +87,9 @@ jobs:
             exit 0
           fi
           git commit -m "build: ${GITHUB_SHA::7}"
-          git push origin release
+
+          # Immutable tag per build for pinning and rollback; run number keeps it unique within a day.
+          tag="build-$(date -u +%Y-%m-%d)-${GITHUB_RUN_NUMBER}"
+          git tag -a "${tag}" -m "Build of ${GITHUB_SHA::7} (run ${GITHUB_RUN_ID})"
+          # Atomic: either both the branch and the tag land, or neither does.
+          git push --atomic origin release "refs/tags/${tag}"

@@ -44,6 +44,12 @@ python3 -m unittest tools/test_build.py -v
 
 Ниже `$R` = `https://raw.githubusercontent.com/Gesugao-san/rulesets/release`.
 
+Каждая сборка, которая меняет `release`, также помечается тегом `build-YYYY-MM-DD-N` (N — номер прогона CI).
+Чтобы закрепить клиент на сборке или откатиться, используйте в ссылке `/<тег>/` вместо `/release/`.
+Профили Throne внутри тега всё равно берут `.srs` из ветки `release`.
+
+В ветке `release` есть свои `README.md` и `README.ru.md` с прямыми ссылками на каждый файл.
+
 ### podkop
 
 Сводные файлы подхватывают новые списки сами, без перенастройки роутера.

@@ -44,6 +44,12 @@ python3 -m unittest tools/test_build.py -v
 
 Below, `$R` = `https://raw.githubusercontent.com/Gesugao-san/rulesets/release`.
 
+Every build that changes `release` is also tagged `build-YYYY-MM-DD-N` (N is the CI run number).
+To pin a client to a build or roll back, use `/<tag>/` instead of `/release/` in the link.
+Throne profiles inside a tag still load `.srs` from the `release` branch.
+
+The `release` branch has its own `README.md` and `README.ru.md` with direct links to every file.
+
 ### podkop
 
 Aggregated files pick up new lists automatically, no router reconfiguration needed.

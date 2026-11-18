@@ -288,6 +288,15 @@ class OutputTests(unittest.TestCase):
       back = json.loads(decompiled.read_text(encoding="utf-8"))
       self.assertEqual(back["rules"], src["rules"], rel)
 
+  def test_release_readmes(self):
+    en, ru = (self.read(build.RELEASE_README[lang]["file"]) for lang in ("en", "ru"))
+    self.assertIn("[Русский](README.ru.md)", "\n".join(en))
+    self.assertIn("[English](README.md)", "\n".join(ru))
+    # Both languages must list the same links in the same order.
+    links = lambda lines: [line for line in lines if line.startswith("- [`")]
+    self.assertEqual(links(en), links(ru))
+    self.assertEqual(len(links(en)), len(self.files))
+
   def test_index_lists_everything(self):
     index = json.loads((self.out / "index.json").read_text(encoding="utf-8"))
     self.assertEqual(sorted(index["files"]), sorted(self.files))
