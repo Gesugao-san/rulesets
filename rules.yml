@@ -1,0 +1,61 @@
+# Single source of truth for rulesets.
+#
+# This is the ONLY place where lists are edited. Everything else (podkop, sing-box,
+# Throne, Tixati, qBittorrent, qBittorrent Enhanced) is built by CI into the `release` branch.
+#
+# Entry kinds:
+#   domain: example.com   — the domain and all its subdomains (domain_suffix);
+#                           second level only, otherwise `sld_exception: <reason>` is required
+#   ip: 198.51.100.0/24   — IPv4/IPv6 address or subnet (no host bits set)
+#   peerid: -XX0001-      — Peer ID prefix (up to 8 chars), only in lists with action: block
+#
+# Every entry in a list with action: block must have `evidence` — links that justify it.
+# The `note` field is a free-form comment and never reaches the output files.
+
+meta:
+  repo: Gesugao-san/rulesets
+  branch: release
+
+lists:
+  p2p-spies:
+    action: block
+    title: P2P spy bots (fake 100% bitfield, no real data)
+    entries:
+      - ip: 31.200.249.0/24
+        note: Teleport Rus LLC (AS216158); the RIPE contact matches the Teleport Media CEO
+        evidence:
+          - https://forum.tixati.com/support/8669
+          - https://forum.tixati.com/support/8351
+          - https://forum.tixati.com/support/8857
+      - ip: 185.16.215.0/24
+        note: Start2 / NETRACK (AS61400); same ORG-SL744-RIPE that sponsors AS216158
+        evidence:
+          - https://forum.tixati.com/support/8669
+          - https://forum.tixati.com/support/8857
+      - peerid: -BM0001-
+        note: 'client "BM 0.0.0.1", metadata request overflow'
+        evidence:
+          - https://forum.tixati.com/support/8351
+      - peerid: -MC0008-
+        note: 'client "MC 0.0.0.8", drops the connection right after receiving the bitfield'
+        evidence:
+          - https://forum.tixati.com/support/7146
+          - https://forum.tixati.com/support/8351
+
+  ru-extra:
+    action: proxy
+    title: Sites unreachable from RU that are needed
+    entries:
+      - domain: ntc.party
+        note: unreachable via the home ISP (checked 2026-11-18)
+      - domain: tixati.com
+      - domain: tixati.net
+        note: dhtbootstrap-*.tixati.net
+
+profiles:
+  throne:
+    selective:
+      name: Gesu selective
+      default_outbound: direct
+      # Order matters: rules are applied top to bottom.
+      lists: [p2p-spies, ru-extra]

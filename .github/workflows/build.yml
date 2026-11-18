@@ -1,0 +1,90 @@
+# Build and publish: rules.yml → release branch.
+# Any change to rules.yml in main rebuilds every format; never edit the release branch by hand.
+name: build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - rules.yml
+      - tools/**
+      - clients/**
+      - .github/workflows/build.yml
+  pull_request:
+    paths:
+      - rules.yml
+      - tools/**
+      - clients/**
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-release
+  cancel-in-progress: false
+
+env:
+  # sing-box version and hash are pinned: bump deliberately, together with a .srs check.
+  SING_BOX_VERSION: 1.14.4
+  SING_BOX_SHA256: 699a1b510aa4396b2176d32d1181920399ebf1e267835da6f3b598d0f7c24968
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python dependencies
+        run: pip install pyyaml
+
+      - name: sing-box (for .srs)
+        run: |
+          name="sing-box-${SING_BOX_VERSION}-linux-amd64"
+          curl -fsSL -o sb.tgz "https://github.com/SagerNet/sing-box/releases/download/v${SING_BOX_VERSION}/${name}.tar.gz"
+          echo "${SING_BOX_SHA256}  sb.tgz" | sha256sum -c -
+          tar xzf sb.tgz
+          install -m 755 "${name}/sing-box" /usr/local/bin/sing-box
+          sing-box version
+
+      - name: Tests (before the build, so nothing broken gets published)
+        env:
+          SING_BOX: /usr/local/bin/sing-box
+        run: python -m unittest tools/test_build.py -v
+
+      - name: Build
+        run: python tools/build.py --rules rules.yml --out dist --sing-box /usr/local/bin/sing-box
+
+      - name: Publish to release
+        if: github.event_name != 'pull_request'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # The release branch is separate; if it does not exist yet, create an empty (orphan) one.
+          if git ls-remote --exit-code --heads origin release >/dev/null; then
+            git fetch --depth 1 origin release
+            git worktree add rel origin/release
+            git -C rel checkout -B release
+          else
+            git worktree add --detach rel
+            git -C rel checkout --orphan release
+            git -C rel rm -rf --quiet . || true
+          fi
+
+          # Full content replacement: lists removed from rules.yml disappear from release too.
+          find rel -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a dist/. rel/
+
+          cd rel
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git commit -m "build: ${GITHUB_SHA::7}"
+          git push origin release

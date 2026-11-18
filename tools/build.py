@@ -1,0 +1,447 @@
+#!/usr/bin/env python3
+"""rulesets builder: turns the single rules.yml into files for every client.
+
+Output (the --out directory, published by CI to the `release` branch):
+  podkop/       <list>.domains.lst, <list>.subnets.lst, all-<action>.*.lst
+  sing-box/     <list>.json (+ .srs when --sing-box is given)
+  throne/       <profile>.txt — throne://route/... link for a remote profile
+  tixati/       <list>.txt, all-block.txt, peerid-filter.txt
+  qbittorrent/  ipfilter.p2p, peer_blacklist.txt (Enhanced), update-ipfilter.ps1
+  index.json, README.md
+
+Usage:
+  python3 tools/build.py --rules rules.yml --out dist [--sing-box /path/to/sing-box]
+
+Exit code 1 means rules.yml has errors (nothing is written).
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import ipaddress
+import json
+import re
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import yaml
+
+# Allowed list actions and what they become in Throne.
+THRONE_ACTION = {
+  "block": {"action": "reject"},
+  "proxy": {"action": "route", "outbound": "proxy"},
+  "direct": {"action": "route", "outbound": "direct"},
+}
+ENTRY_KINDS = ("domain", "ip", "peerid")
+LIST_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+DOMAIN_LABEL_RE = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
+# Peer ID: printable ASCII without spaces; Enhanced compares only the first 8 chars.
+PEERID_RE = re.compile(r"^[\x21-\x7e]{1,8}$")
+PEERID_MAX = 8
+# Rule-set source version: podkop itself writes version 3, sing-box 1.11+ reads it.
+SINGBOX_RULESET_VERSION = 3
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+class RulesError(Exception):
+  """An error in rules.yml: the build stops and nothing is published."""
+
+
+@dataclass
+class RuleList:
+  """A single validated list from rules.yml."""
+
+  name: str
+  action: str
+  title: str
+  domains: list[str] = field(default_factory=list)
+  networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = field(default_factory=list)
+  peerids: list[str] = field(default_factory=list)
+
+  @property
+  def ipv4(self) -> list[ipaddress.IPv4Network]:
+    return [n for n in self.networks if n.version == 4]
+
+  @property
+  def ipv6(self) -> list[ipaddress.IPv6Network]:
+    return [n for n in self.networks if n.version == 6]
+
+
+# ---------------------------------------------------------------- validation
+
+
+def check_domain(value: str, entry: dict, where: str) -> str:
+  """Validates a domain; only the second level (SLD) is allowed by default."""
+  domain = str(value).strip().lower().rstrip(".")
+  labels = domain.split(".")
+  if len(labels) < 2 or not all(DOMAIN_LABEL_RE.match(label) for label in labels):
+    raise RulesError(f"{where}: '{value}' is not a valid domain")
+  if labels[-1].isdigit():
+    raise RulesError(f"{where}: '{value}' looks like an IP, use ip:")
+  if len(labels) > 2 and not entry.get("sld_exception"):
+    raise RulesError(f"{where}: '{value}' is deeper than the second level; add sld_exception: <reason>")
+  return domain
+
+
+def check_ip(value: str, where: str) -> ipaddress.IPv4Network | ipaddress.IPv6Network:
+  """Validates an address/subnet: no host bits set, not private or reserved."""
+  try:
+    net = ipaddress.ip_network(str(value).strip(), strict=True)
+  except ValueError as exc:
+    raise RulesError(f"{where}: '{value}' — {exc}") from None
+  if not net.is_global:
+    raise RulesError(f"{where}: '{value}' is a private/reserved range")
+  return net
+
+
+def check_peerid(value: str, where: str) -> str:
+  """Validates a Peer ID prefix; a trailing asterisk is allowed and dropped."""
+  peerid = str(value).strip()
+  if peerid.endswith("*"):
+    peerid = peerid[:-1]
+  if "*" in peerid:
+    raise RulesError(f"{where}: '{value}' — '*' is allowed only at the end")
+  if len(peerid) > PEERID_MAX:
+    raise RulesError(f"{where}: '{value}' is longer than {PEERID_MAX} chars — Enhanced would never match it")
+  if not PEERID_RE.match(peerid):
+    raise RulesError(f"{where}: '{value}' must be printable ASCII without spaces")
+  return peerid
+
+
+def check_overlaps(rule_list: RuleList) -> None:
+  """Rejects subnets nested in one another: almost always a typo."""
+  for version in (4, 6):
+    nets = sorted((n for n in rule_list.networks if n.version == version), key=lambda n: (n.network_address, n.prefixlen))
+    for prev, cur in zip(nets, nets[1:]):
+      if cur.subnet_of(prev):
+        raise RulesError(f"lists.{rule_list.name}: {cur} is already inside {prev}")
+
+
+def parse_entry(rule_list: RuleList, entry: dict, where: str) -> None:
+  """Parses one entry and puts it into the matching field of the list."""
+  if not isinstance(entry, dict):
+    raise RulesError(f"{where}: an entry must be a mapping")
+  kinds = [k for k in ENTRY_KINDS if k in entry]
+  if len(kinds) != 1:
+    raise RulesError(f"{where}: exactly one key of {', '.join(ENTRY_KINDS)} is required")
+  kind = kinds[0]
+  if rule_list.action == "block" and not entry.get("evidence"):
+    raise RulesError(f"{where}: evidence is required in a block list")
+
+  parsers = {
+    "domain": lambda: rule_list.domains.append(check_domain(entry["domain"], entry, where)),
+    "ip": lambda: rule_list.networks.append(check_ip(entry["ip"], where)),
+    "peerid": lambda: rule_list.peerids.append(check_peerid(entry["peerid"], where)),
+  }
+  if kind == "peerid" and rule_list.action != "block":
+    raise RulesError(f"{where}: peerid is allowed only in lists with action: block")
+  parsers[kind]()
+
+
+def parse_list(name: str, raw: dict) -> RuleList:
+  """Validates a whole list: name, action, entries, duplicates, overlaps."""
+  where = f"lists.{name}"
+  if not LIST_NAME_RE.match(name):
+    raise RulesError(f"{where}: list name must match [a-z0-9-]")
+  if not isinstance(raw, dict):
+    raise RulesError(f"{where}: a mapping was expected")
+  action = raw.get("action")
+  if action not in THRONE_ACTION:
+    raise RulesError(f"{where}: action must be one of {', '.join(THRONE_ACTION)}")
+  entries = raw.get("entries") or []
+  if not entries:
+    raise RulesError(f"{where}: the list is empty")
+
+  rule_list = RuleList(name=name, action=action, title=str(raw.get("title", name)))
+  for index, entry in enumerate(entries):
+    parse_entry(rule_list, entry, f"{where}.entries[{index}]")
+
+  for label, values in (("domain", rule_list.domains), ("ip", rule_list.networks), ("peerid", rule_list.peerids)):
+    dupes = sorted({str(v) for v in values if values.count(v) > 1})
+    if dupes:
+      raise RulesError(f"{where}: duplicate {label}: {', '.join(dupes)}")
+  check_overlaps(rule_list)
+  return rule_list
+
+
+def parse_profiles(raw: dict, lists: dict[str, RuleList]) -> dict[str, dict]:
+  """Validates Throne profiles: existing lists and a known default outbound."""
+  profiles = (raw or {}).get("throne") or {}
+  for name, profile in profiles.items():
+    where = f"profiles.throne.{name}"
+    if not LIST_NAME_RE.match(name):
+      raise RulesError(f"{where}: profile name must match [a-z0-9-]")
+    if profile.get("default_outbound", "direct") not in ("direct", "proxy", "block"):
+      raise RulesError(f"{where}: default_outbound must be direct, proxy or block")
+    unknown = [n for n in profile.get("lists", []) if n not in lists]
+    if unknown:
+      raise RulesError(f"{where}: unknown lists {', '.join(unknown)}")
+    if not profile.get("lists"):
+      raise RulesError(f"{where}: the profile is empty")
+  return profiles
+
+
+def load_rules(path: Path) -> tuple[dict, dict[str, RuleList], dict[str, dict]]:
+  """Reads and validates the whole rules.yml."""
+  try:
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+  except yaml.YAMLError as exc:
+    raise RulesError(f"{path}: YAML could not be parsed: {exc}") from None
+  if not isinstance(raw, dict):
+    raise RulesError(f"{path}: the root must be a mapping")
+
+  meta = raw.get("meta") or {}
+  if not re.match(r"^[\w.-]+/[\w.-]+$", str(meta.get("repo", ""))):
+    raise RulesError("meta.repo: owner/name is required")
+  meta.setdefault("branch", "release")
+
+  lists = {name: parse_list(name, body) for name, body in (raw.get("lists") or {}).items()}
+  if not lists:
+    raise RulesError("lists: there are no lists")
+  profiles = parse_profiles(raw.get("profiles"), lists)
+  return meta, lists, profiles
+
+
+# ---------------------------------------------------------------- generators
+
+
+def write_lines(path: Path, lines: list[str]) -> None:
+  """Writes a text file with LF line endings and a trailing newline."""
+  path.parent.mkdir(parents=True, exist_ok=True)
+  path.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8", newline="\n")
+
+
+def raw_url(meta: dict, rel_path: str) -> str:
+  """Direct link to a file on the release branch."""
+  return f"https://raw.githubusercontent.com/{meta['repo']}/{meta['branch']}/{rel_path}"
+
+
+def ip_range(net) -> str:
+  """Subnet → 'start-end' range (qBittorrent does not understand CIDR)."""
+  return f"{net.network_address}-{net.broadcast_address}"
+
+
+def gen_podkop(out: Path, lists: dict[str, RuleList], warnings: list[str]) -> list[str]:
+  """podkop: .lst with one value per line; subnets are IPv4 only."""
+  files = []
+  by_action: dict[str, dict[str, list[str]]] = {}
+  for rl in lists.values():
+    if rl.ipv6:
+      warnings.append(f"{rl.name}: {len(rl.ipv6)} IPv6 entries skipped for podkop — it accepts IPv4 only")
+    parts = {"domains": rl.domains, "subnets": [str(n) for n in rl.ipv4]}
+    for kind, values in parts.items():
+      if not values:
+        continue
+      rel = f"podkop/{rl.name}.{kind}.lst"
+      write_lines(out / rel, values)
+      files.append(rel)
+      by_action.setdefault(rl.action, {}).setdefault(kind, []).extend(values)
+
+  # Aggregated files per action: a new list is picked up without reconfiguring the router.
+  for action, parts in by_action.items():
+    for kind, values in parts.items():
+      rel = f"podkop/all-{action}.{kind}.lst"
+      write_lines(out / rel, sorted(set(values), key=values.index))
+      files.append(rel)
+  return files
+
+
+def singbox_source(rl: RuleList) -> dict | None:
+  """sing-box rule-set source; None when the list has no domains or IPs."""
+  rules = []
+  if rl.domains:
+    rules.append({"domain_suffix": rl.domains})
+  if rl.networks:
+    rules.append({"ip_cidr": [str(n) for n in rl.networks]})
+  if not rules:
+    return None
+  return {"version": SINGBOX_RULESET_VERSION, "rules": rules}
+
+
+def gen_singbox(out: Path, lists: dict[str, RuleList], sing_box: str | None) -> list[str]:
+  """sing-box: .json always, .srs only when a sing-box binary is given."""
+  files = []
+  for rl in lists.values():
+    source = singbox_source(rl)
+    if source is None:
+      continue
+    json_rel = f"sing-box/{rl.name}.json"
+    (out / json_rel).parent.mkdir(parents=True, exist_ok=True)
+    (out / json_rel).write_text(json.dumps(source, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
+    files.append(json_rel)
+    if not sing_box:
+      continue
+    srs_rel = f"sing-box/{rl.name}.srs"
+    subprocess.run([sing_box, "rule-set", "compile", "--output", str(out / srs_rel), str(out / json_rel)], check=True)
+    files.append(srs_rel)
+  return files
+
+
+def throne_profile(meta: dict, name: str, profile: dict, lists: dict[str, RuleList]) -> dict:
+  """Throne profile object (kind throne-route-profile, v 1) with rule_set URLs to .srs."""
+  rules = [
+    {"name": "dns", "type": "custom", "action": "hijack-dns", "protocol": "dns"},
+    {"name": "private direct", "type": "custom", "action": "route", "outbound": "direct", "ip_is_private": True},
+  ]
+  for list_name in profile["lists"]:
+    rl = lists[list_name]
+    if singbox_source(rl) is None:
+      continue
+    rule = {"name": f"{rl.action}: {rl.name}", "type": "custom", **THRONE_ACTION[rl.action]}
+    rule["rule_set"] = [raw_url(meta, f"sing-box/{rl.name}.srs")]
+    rules.append(rule)
+  return {
+    "kind": "throne-route-profile",
+    "v": 1,
+    "name": profile.get("name", name),
+    "default_outbound": profile.get("default_outbound", "direct"),
+    "rules": rules,
+  }
+
+
+def throne_link(obj: dict) -> str:
+  """throne://route/<base64url without '='> — the same way Throne makes links."""
+  compact = json.dumps(obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+  return "throne://route/" + base64.urlsafe_b64encode(compact).decode("ascii").rstrip("=")
+
+
+def gen_throne(out: Path, meta: dict, lists: dict[str, RuleList], profiles: dict[str, dict]) -> list[str]:
+  """Throne: one link file per profile."""
+  files = []
+  for name, profile in profiles.items():
+    rel = f"throne/{name}.txt"
+    write_lines(out / rel, [throne_link(throne_profile(meta, name, profile, lists))])
+    files.append(rel)
+  return files
+
+
+def gen_tixati(out: Path, lists: dict[str, RuleList], warnings: list[str]) -> list[str]:
+  """Tixati: 'label:CIDR' (IPv4 and IPv6), an aggregated blocklist and a Peer ID filter."""
+  files = []
+  all_block: list[str] = []
+  peerids: list[str] = []
+  for rl in lists.values():
+    if rl.action != "block":
+      continue
+    peerids.extend(p for p in rl.peerids if p not in peerids)
+    lines = [f"{rl.name}:{net}" for net in rl.networks]
+    if not lines:
+      continue
+    if len(lines) == 1:
+      warnings.append(f"{rl.name}: a single line — Tixati before 2.82 does not load such a file")
+    rel = f"tixati/{rl.name}.txt"
+    write_lines(out / rel, lines)
+    files.append(rel)
+    all_block.extend(lines)
+
+  if all_block:
+    write_lines(out / "tixati/all-block.txt", all_block)
+    files.append("tixati/all-block.txt")
+  if peerids:
+    # One line each in Settings → Peers → Client Filter → Peer ID → "never allow".
+    write_lines(out / "tixati/peerid-filter.txt", [f"{p}*" for p in peerids])
+    files.append("tixati/peerid-filter.txt")
+  return files
+
+
+def pcre_escape(text: str) -> str:
+  """Escapes PCRE (QRegularExpression) special characters without over-escaping."""
+  return re.sub(r"([\\^$.|?*+()\[\]{}])", r"\\\1", text)
+
+
+def gen_qbittorrent(out: Path, lists: dict[str, RuleList]) -> list[str]:
+  """qBittorrent: one ipfilter.p2p (the client has a single filter path) and peer_blacklist.txt for Enhanced."""
+  files = []
+  lines = ["# rulesets: generated, do not edit"]
+  peerids: list[str] = []
+  for rl in lists.values():
+    if rl.action != "block":
+      continue
+    lines.extend(f"{rl.name}:{ip_range(net)}" for net in rl.networks)
+    peerids.extend(p for p in rl.peerids if p not in peerids)
+
+  if len(lines) > 1:
+    write_lines(out / "qbittorrent/ipfilter.p2p", lines)
+    files.append("qbittorrent/ipfilter.p2p")
+  if peerids:
+    # Enhanced format: "<Peer ID regex> <client name regex>", both must match.
+    write_lines(out / "qbittorrent/peer_blacklist.txt", [f"^{pcre_escape(p)} .*" for p in peerids])
+    files.append("qbittorrent/peer_blacklist.txt")
+
+  script = REPO_ROOT / "clients/qbittorrent/update-ipfilter.ps1"
+  if script.exists():
+    shutil.copyfile(script, out / "qbittorrent/update-ipfilter.ps1")
+    files.append("qbittorrent/update-ipfilter.ps1")
+  return files
+
+
+def gen_index(out: Path, meta: dict, files: list[str], warnings: list[str]) -> None:
+  """index.json and README.md of the release branch with links to everything built."""
+  index = {"repo": meta["repo"], "branch": meta["branch"], "files": {f: raw_url(meta, f) for f in sorted(files)}, "warnings": warnings}
+  (out / "index.json").write_text(json.dumps(index, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
+
+  lines = [
+    "# rulesets — release",
+    "",
+    f"Generated from `rules.yml` in [{meta['repo']}](https://github.com/{meta['repo']}). Do not edit this branch.",
+    "",
+  ]
+  for folder in sorted({f.split("/")[0] for f in files}):
+    lines.append(f"## {folder}")
+    lines.append("")
+    lines.extend(f"- [`{f}`]({raw_url(meta, f)})" for f in sorted(files) if f.startswith(folder + "/"))
+    lines.append("")
+  if warnings:
+    lines.append("## Warnings")
+    lines.append("")
+    lines.extend(f"- {w}" for w in warnings)
+    lines.append("")
+  write_lines(out / "README.md", lines[:-1])
+
+
+def build(rules_path: Path, out: Path, sing_box: str | None) -> tuple[list[str], list[str]]:
+  """Full build: validation, output directory cleanup, all generators."""
+  meta, lists, profiles = load_rules(rules_path)
+  if out.exists():
+    shutil.rmtree(out)
+  out.mkdir(parents=True)
+
+  warnings: list[str] = []
+  files = []
+  files += gen_podkop(out, lists, warnings)
+  files += gen_singbox(out, lists, sing_box)
+  files += gen_throne(out, meta, lists, profiles)
+  files += gen_tixati(out, lists, warnings)
+  files += gen_qbittorrent(out, lists)
+  if not sing_box:
+    warnings.append("sing-box not given: .srs files were not built, Throne profiles point to missing files")
+  gen_index(out, meta, files, warnings)
+  return files, warnings
+
+
+def main() -> int:
+  parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+  parser.add_argument("--rules", type=Path, default=REPO_ROOT / "rules.yml")
+  parser.add_argument("--out", type=Path, default=REPO_ROOT / "dist")
+  parser.add_argument("--sing-box", dest="sing_box", default=None, help="path to the sing-box binary for .srs")
+  args = parser.parse_args()
+
+  try:
+    files, warnings = build(args.rules, args.out, args.sing_box)
+  except RulesError as exc:
+    print(f"ERROR: {exc}", file=sys.stderr)
+    return 1
+
+  print(f"Built {len(files)} files → {args.out}")
+  for warning in warnings:
+    # GitHub Actions annotation format: the warning shows up in the run summary.
+    print(f"::warning::{warning}")
+  return 0
+
+
+if __name__ == "__main__":
+  sys.exit(main())
