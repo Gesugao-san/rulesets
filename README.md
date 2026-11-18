@@ -160,6 +160,18 @@ python3 tools/build.py --out dist --sing-box sing-box  # with .srs
 python3 -m unittest tools/test_build.py -v
 ```
 
+## When a build runs
+
+| Event | Condition | Result |
+|---|---|---|
+| Push to `main` | `rules.yaml`, `tools/**`, `clients/**` or `.github/workflows/build.yml` changed | tests, build, publish |
+| Pull request | the same paths changed | tests and build only, nothing is published |
+| Schedule | daily at 00:00 UTC (scheduled runs may start a few minutes late) | tests, build, publish — prefixes behind `asn`/`country`/`continent` change without edits |
+| Manual | **Run workflow** on the Actions tab | tests, build, publish |
+
+Changes to `README.md`, `README.ru.md` or `.gitignore` alone do not start a build.
+A publish that changes nothing in `release` creates no commit, no tag and no GitHub Release.
+
 ## Data sources
 
 `asn`, `country` and `continent` entries are expanded at build time; results are saved in `release/resolved/` so every change is visible as a diff.
