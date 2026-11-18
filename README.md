@@ -82,6 +82,7 @@ Every build is also tagged `build-YYYY-MM-DD-N` (N is the CI run number). To pin
 
 ## throne
 
+- [`throne/selective.remoteroute.txt`](https://raw.githubusercontent.com/Gesugao-san/rulesets/release/throne/selective.remoteroute.txt)
 - [`throne/selective.txt`](https://raw.githubusercontent.com/Gesugao-san/rulesets/release/throne/selective.txt)
 
 ## tixati

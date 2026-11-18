@@ -82,6 +82,7 @@
 
 ## throne
 
+- [`throne/selective.remoteroute.txt`](https://raw.githubusercontent.com/Gesugao-san/rulesets/release/throne/selective.remoteroute.txt)
 - [`throne/selective.txt`](https://raw.githubusercontent.com/Gesugao-san/rulesets/release/throne/selective.txt)
 
 ## tixati
