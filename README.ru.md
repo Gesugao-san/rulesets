@@ -2,7 +2,7 @@
 
 [English](README.md) | **Русский**
 
-Собрано из `rules.yml` в [Gesugao-san/rulesets](https://github.com/Gesugao-san/rulesets). Эту ветку не править.
+Собрано из `rules.yml` в [Gesugao-san/rulesets](https://github.com/Gesugao-san/rulesets). Ветка генерируется автоматически; ручные правки здесь заменит следующая сборка.
 
 Каждая сборка также помечена тегом `build-YYYY-MM-DD-N` (N — номер прогона CI). Чтобы закрепить клиент на сборке, замените в ссылке `/release/` на `/<тег>/`. Профили Throne внутри тега всё равно берут `.srs` из ветки `release`.
 

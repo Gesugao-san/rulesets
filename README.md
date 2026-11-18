@@ -2,7 +2,7 @@
 
 **English** | [Русский](README.ru.md)
 
-Generated from `rules.yml` in [Gesugao-san/rulesets](https://github.com/Gesugao-san/rulesets). Do not edit this branch.
+Generated from `rules.yml` in [Gesugao-san/rulesets](https://github.com/Gesugao-san/rulesets). This branch is generated automatically; manual changes here are replaced by the next build.
 
 Every build is also tagged `build-YYYY-MM-DD-N` (N is the CI run number). To pin a client to a build, replace `/release/` in a link with `/<tag>/`. Throne profiles inside a tag still load `.srs` from the `release` branch.
 
