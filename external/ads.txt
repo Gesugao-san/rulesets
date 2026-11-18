@@ -1,0 +1,5 @@
+https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/category-ads.srs
+https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/category-ads-all.srs
+https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/category-ads-and-telemetry.srs
+https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/category-ru@ads.srs
+https://raw.githubusercontent.com/Chocolate4U/Iran-sing-box-rules/rule-set/geosite-ads.srs

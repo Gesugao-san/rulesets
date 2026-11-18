@@ -1,1 +1,6 @@
 ruleset:https://raw.githubusercontent.com/Gesugao-san/rulesets/release/sing-box/p2p-spies.srs
+ruleset:https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/category-ads.srs
+ruleset:https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/category-ads-all.srs
+ruleset:https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/category-ads-and-telemetry.srs
+ruleset:https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/category-ru@ads.srs
+ruleset:https://raw.githubusercontent.com/Chocolate4U/Iran-sing-box-rules/rule-set/geosite-ads.srs

@@ -1,0 +1,5 @@
+ruleset:https://raw.githubusercontent.com/Gesugao-san/rulesets/release/sing-box/ru-direct.srs
+ruleset:https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/category-gov-ru.srs
+ruleset:https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geosite/geosite-ru-available-only-inside.srs
+ruleset:https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/category-ru.srs
+ruleset:https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/ru.srs
