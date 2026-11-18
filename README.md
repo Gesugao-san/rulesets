@@ -1,6 +1,10 @@
 # rulesets — release
 
+**English** | [Русский](README.ru.md)
+
 Generated from `rules.yml` in [Gesugao-san/rulesets](https://github.com/Gesugao-san/rulesets). Do not edit this branch.
+
+Every build is also tagged `build-YYYY-MM-DD-N` (N is the CI run number). To pin a client to a build, replace `/release/` in a link with `/<tag>/`. Throne profiles inside a tag still load `.srs` from the `release` branch.
 
 ## podkop
 
