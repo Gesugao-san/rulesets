@@ -59,8 +59,8 @@
     "sing-box/youtube.srs": "https://raw.githubusercontent.com/Gesugao-san/rulesets/release/sing-box/youtube.srs",
     "throne/selective.remoteroute.txt": "https://raw.githubusercontent.com/Gesugao-san/rulesets/release/throne/selective.remoteroute.txt",
     "throne/selective.txt": "https://raw.githubusercontent.com/Gesugao-san/rulesets/release/throne/selective.txt",
-    "tixati/all-block.txt": "https://raw.githubusercontent.com/Gesugao-san/rulesets/release/tixati/all-block.txt",
-    "tixati/p2p-spies.txt": "https://raw.githubusercontent.com/Gesugao-san/rulesets/release/tixati/p2p-spies.txt",
+    "tixati/all-block.p2p.txt": "https://raw.githubusercontent.com/Gesugao-san/rulesets/release/tixati/all-block.p2p.txt",
+    "tixati/p2p-spies.p2p.txt": "https://raw.githubusercontent.com/Gesugao-san/rulesets/release/tixati/p2p-spies.p2p.txt",
     "tixati/peerid-filter.txt": "https://raw.githubusercontent.com/Gesugao-san/rulesets/release/tixati/peerid-filter.txt"
   },
   "warnings": [

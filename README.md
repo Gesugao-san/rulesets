@@ -87,8 +87,8 @@ Every build is also tagged `build-YYYY-MM-DD-N` (N is the CI run number). To pin
 
 ## tixati
 
-- [`tixati/all-block.txt`](https://raw.githubusercontent.com/Gesugao-san/rulesets/release/tixati/all-block.txt)
-- [`tixati/p2p-spies.txt`](https://raw.githubusercontent.com/Gesugao-san/rulesets/release/tixati/p2p-spies.txt)
+- [`tixati/all-block.p2p.txt`](https://raw.githubusercontent.com/Gesugao-san/rulesets/release/tixati/all-block.p2p.txt)
+- [`tixati/p2p-spies.p2p.txt`](https://raw.githubusercontent.com/Gesugao-san/rulesets/release/tixati/p2p-spies.p2p.txt)
 - [`tixati/peerid-filter.txt`](https://raw.githubusercontent.com/Gesugao-san/rulesets/release/tixati/peerid-filter.txt)
 
 ## Warnings
