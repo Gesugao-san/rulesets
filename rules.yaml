@@ -5,13 +5,16 @@
 #
 # Entry kinds:
 #   domain: example.com   — the domain and all its subdomains (domain_suffix);
-#                           second level only, otherwise `sld_exception: <reason>` is required
+#                           must be a registrable domain (eTLD+1 by the Public Suffix List),
+#                           otherwise `sld_exception: <reason>` is required
 #   ip: 198.51.100.0/24   — IPv4/IPv6 address or subnet (no host bits set)
 #   peerid: -XX0001-      — Peer ID prefix (up to 8 chars), only in lists with action: block
 #   asn: 64500            — all prefixes the AS announces (RIPEstat announced-prefixes)
 #   country: XX           — all prefixes REGISTERED to the country (RIPEstat country-resource-list,
 #                           based on RIR delegation stats — registration, not geolocation)
 #   continent: EU         — all countries of a GeoNames continent: AF AN AS EU NA OC SA
+#   ruleset: geosite-xxx  — an external sing-box rule-set: a name from Throne's catalog
+#                           (geosite-*, geoip-*) or an https link to a .srs file
 #
 # asn/country/continent are expanded at build time; the result lands in release/resolved/.
 # Each has a `max_prefixes` guard (defaults: asn 16, country 20000, continent 200000):
@@ -66,6 +69,363 @@ lists:
       - domain: tixati.net
         note: dhtbootstrap-*.tixati.net
 
+  ads:
+    action: block
+    title: Ads and telemetry (external rule-sets from Throne's catalog)
+    entries:
+      - ruleset: geosite-category-ads
+        evidence:
+          - https://github.com/MetaCubeX/meta-rules-dat
+          - https://github.com/throneproj/routeprofiles/tree/rule-set
+      - ruleset: geosite-category-ads-all
+        evidence:
+          - https://github.com/MetaCubeX/meta-rules-dat
+          - https://github.com/throneproj/routeprofiles/tree/rule-set
+      - ruleset: geosite-category-ads-and-telemetry
+        evidence:
+          - https://github.com/MetaCubeX/meta-rules-dat
+          - https://github.com/throneproj/routeprofiles/tree/rule-set
+      - ruleset: geosite-category-ru@ads
+        evidence:
+          - https://github.com/MetaCubeX/meta-rules-dat
+          - https://github.com/throneproj/routeprofiles/tree/rule-set
+      - ruleset: geosite-ads
+        evidence:
+          - https://github.com/Chocolate4U/Iran-sing-box-rules
+          - https://github.com/throneproj/routeprofiles/tree/rule-set
+
+  ru-direct:
+    action: direct
+    title: Russian services that must go direct (banks, government, shops, carriers)
+    entries:
+      - domain: alfabank.ru
+      - domain: beeline.ru
+      - domain: burgerkingrus.ru
+      - domain: cardlink.link
+      - domain: cdek.ru
+      - domain: cdek.shopping
+      - domain: cian.ru
+      - domain: citilink.ru
+      - domain: detmir.ru
+      - domain: dns-shop.ru
+      - domain: doctorhead.ru
+      - domain: dodopizza.ru
+      - domain: domclick.ru
+      - domain: donatov.net
+      - domain: eldorado.ru
+      - domain: gazprombank.ru
+      - domain: goldapple.ru
+      - domain: gosuslugi.ru
+      - domain: hh.ru
+      - domain: ivi.ru
+      - domain: kion.ru
+      - domain: kuper.ru
+      - domain: lamoda.ru
+      - domain: magnit.ru
+      - domain: megafon.ru
+      - domain: megamarket.ru
+      - domain: mos.ru
+      - domain: mosreg.ru
+      - domain: mts.ru
+      - domain: nalog.ru
+      - domain: nspk.ru
+      - domain: perekrestok.ru
+      - domain: planeta.tc
+      - domain: pobeda.aero
+      - domain: pochta.ru
+      - domain: premier.one
+      - domain: psbank.ru
+      - domain: pyaterochka.ru
+      - domain: rostelecom.ru
+      - domain: rostics.ru
+      - domain: rzd.ru
+      - domain: s7.ru
+      - domain: samokat.ru
+      - domain: sbermarket.ru
+      - domain: start.ru
+      - domain: t2.ru
+      - domain: tele2.ru
+      - domain: tutu.ru
+      - domain: utair.ru
+      - domain: vkusnoitochka.ru
+      - domain: vkusvill.ru
+      - domain: vprok.ru
+      - domain: vtb.ru
+      - domain: yoomoney.ru
+      - domain: youla.io
+      - domain: youla.ru
+
+  telegram:
+    action: proxy
+    title: Telegram — domains and all networks of Telegram Messenger Inc
+    entries:
+      - ruleset: geosite-telegram
+      - ruleset: geoip-telegram
+      # Telegram connects to IPs directly, so its own ASes are listed too.
+      # Together they cover https://core.telegram.org/resources/cidr.txt (checked 2026-11-18).
+      - asn: 62041
+      - asn: 62014
+      - asn: 59930
+      - asn: 44907
+        note: Telegram CDN
+      - asn: 211157
+      - domain: telegram.org
+      - domain: t.me
+      - domain: telegram.me
+      - domain: telegram.dog
+      - domain: telegra.ph
+      - domain: telesco.pe
+      - domain: tdesktop.com
+      - domain: cdn-telegram.org
+      - domain: telegram-cdn.org
+      - domain: graph.org
+      - domain: tg.dev
+      - domain: tx.me
+      - domain: telegram.space
+      - domain: telega.one
+      - domain: usercontent.dev
+      - domain: comments.app
+      - domain: contest.com
+      - domain: quiz.directory
+      - domain: fragment.com
+
+  discord:
+    action: proxy
+    title: Discord (checked against v2fly domain-list-community, 2026-11-18)
+    entries:
+      - ruleset: geosite-discord
+      - domain: discord.com
+      - domain: discord.gg
+      - domain: discord.media
+      - domain: discord.co
+      - domain: discord.dev
+      - domain: discord.design
+      - domain: discord.gift
+      - domain: discord.gifts
+      - domain: discord.new
+      - domain: discord.store
+      - domain: discord.tools
+      - domain: discordapp.com
+      - domain: discordapp.net
+      - domain: discordapp.io
+      - domain: discordcdn.com
+      - domain: discordstatus.com
+      - domain: discord-activities.com
+      - domain: discordactivities.com
+      - domain: discordmerch.com
+      - domain: discordpartygames.com
+      - domain: discordsays.com
+        sld_exception: Discord Activities; a public suffix, the whole suffix on purpose
+      - domain: dis.gd
+      - domain: discord.me
+      - domain: disboard.org
+
+  youtube:
+    action: proxy
+    title: YouTube (checked against v2fly domain-list-community, 2026-11-18)
+    entries:
+      - ruleset: geosite-youtube
+      - domain: youtube.com
+      - domain: youtu.be
+      - domain: yt.be
+      - domain: ytimg.com
+      - domain: ggpht.com
+      - domain: googlevideo.com
+      - domain: youtube-nocookie.com
+      - domain: youtubekids.com
+      - domain: withyoutube.com
+        sld_exception: YouTube; a public suffix, the whole suffix on purpose
+      # Under googleapis.com, itself a public suffix: these names are eTLD+1.
+      - domain: youtubei.googleapis.com
+      - domain: youtube.googleapis.com
+      - domain: youtubeembeddedplayer.googleapis.com
+      - domain: jnn-pa.googleapis.com
+      - domain: yt3.googleusercontent.com
+        sld_exception: YouTube avatars; googleusercontent.com hosts unrelated Google content
+      - domain: wide-youtube.l.google.com
+        sld_exception: YouTube host under google.com
+      - domain: youtube-ui.l.google.com
+        sld_exception: YouTube host under google.com
+      - domain: yt-video-upload.l.google.com
+        sld_exception: YouTube upload host under google.com
+      - domain: ytimg.l.google.com
+        sld_exception: YouTube images host under google.com
+
+  services:
+    action: proxy
+    title: Other services unreachable or degraded from RU
+    entries:
+      - ruleset: geosite-google-play
+      - ruleset: geosite-facebook
+      - ruleset: geosite-instagram
+      - ruleset: geosite-twitter
+      - ruleset: geosite-tiktok
+      - ruleset: geosite-netflix
+      - ruleset: geosite-patreon
+      - ruleset: geosite-soundcloud
+      - ruleset: geosite-bbc
+      - ruleset: geosite-wikidot
+      - ruleset: geosite-fastly
+      - ruleset: geosite-jetbrains
+      - ruleset: geosite-archive
+      # AI
+      - domain: openai.com
+      - domain: chatgpt.com
+      - domain: sora.com
+      - domain: deepseek.com
+      - domain: elevenlabs.io
+      # Amazon, AWS
+      - domain: amazon.com
+      - domain: amazon.de
+      - domain: amazonaws.com
+      - domain: awsstatic.com
+      - domain: awsapps.com
+        sld_exception: AWS SSO portals; a public suffix, the whole suffix on purpose
+      - domain: a2z.com
+      - domain: awsdns-62.net
+      - domain: cloudfront.net
+        sld_exception: the whole AWS CloudFront suffix on purpose
+      # Cloudflare
+      - domain: cloudflare.com
+      - domain: cloudflare.net
+        sld_exception: Cloudflare; a public suffix, the whole suffix on purpose
+      - domain: cloudflare.tv
+      - domain: cloudflare-dns.com
+      - domain: cloudflare-esni.com
+      - domain: cloudflare-ech.com
+      - domain: cloudflare-gateway.com
+      - domain: cloudflare-quic.com
+      - domain: cloudflarewarp.com
+      - domain: argotunnel.com
+      - domain: cfargotunnel.com
+      - domain: trycloudflare.com
+        sld_exception: Cloudflare quick tunnels; a public suffix, the whole suffix on purpose
+      - domain: cfl.re
+      - domain: every1dns.net
+      - domain: isbgpsafeyet.com
+      - domain: pacloudflare.com
+      - domain: videodelivery.net
+      - domain: warp.plus
+      - domain: one.one.one.one
+        sld_exception: Cloudflare 1.1.1.1 resolver host; one.one is not Cloudflare's
+      - domain: pages.dev
+        sld_exception: the whole Cloudflare Pages suffix on purpose
+      - domain: workers.dev
+        sld_exception: the whole Cloudflare Workers suffix on purpose
+      # Other clouds and CDNs
+      - domain: akamai.com
+      - domain: akamaitechnologies.com
+      - domain: digitaloceanspaces.com
+      - domain: gvt1.com
+      - domain: storage.googleapis.com
+      - domain: fastly.com
+      - domain: wsimg.com
+      - domain: wixmp.com
+      # Developer tools and vendors
+      - domain: jsdelivr.net
+      - domain: unpkg.com
+      - domain: esm.sh
+      - domain: skypack.dev
+      - domain: nodecdn.net
+      - domain: broadcom.com
+      - domain: microsoft.com
+      - domain: cisco.com
+      - domain: iar.com
+      - domain: st.com
+      - domain: ntkernel.com
+      - domain: openwrt.org
+      - domain: superuser.com
+      - domain: habr.com
+      - domain: myfonts.com
+      - domain: fonts.com
+      # Hardware: Meshtastic, Heltec
+      - domain: meshtastic.org
+      - domain: heltec.org
+      - domain: heltec.cn
+      # Games and mods
+      - domain: xbox.com
+      - domain: xboxlive.com
+      - domain: minecraft.net
+      - domain: minecraftservices.com
+      - domain: mojang.com
+      - domain: aternos.me
+      - domain: curseforge.com
+      - domain: forgecdn.net
+      - domain: minecraftforge.net
+      - domain: neoforged.net
+      - domain: modrinth.com
+      - domain: nodecraft.com
+      - domain: vintagestory.at
+      - domain: fractalsoftworks.com
+      - domain: warframe.com
+      - domain: wrfr.me
+      - domain: digitalextremes.com
+      - domain: humblebundle.com
+      - domain: steamdb.info
+      - domain: metacritic.com
+      - domain: theportalwiki.com
+      - domain: saveeditonline.com
+      - domain: 7tv.app
+      - domain: 7tv.io
+      # Messaging, privacy, VPN
+      - domain: whatsapp.com
+      - domain: signal.org
+      - domain: briarproject.org
+      - domain: matrix.org
+      - domain: element.io
+      - domain: vector.im
+      - domain: riot.im
+      - domain: torproject.org
+      - domain: amnezia.org
+      - domain: invizible.net
+      - domain: nordvpn.com
+      - domain: ublockorigin.com
+      - domain: tiekoetter.com
+      - domain: temp-mail.org
+      - domain: vknext.net
+      # Amnezia mirror https://storage.googleapis.com/amnezia/amnezia.org is covered by storage.googleapis.com above.
+      # Media, art, reading
+      - domain: bbc.com
+      - domain: spotify.com
+      - domain: parsec.app
+      - domain: pixiv.net
+      - domain: pixabay.com
+      - domain: gfycat.com
+      - domain: jpegshare.net
+      - domain: archive.org
+      - domain: kiwix.org
+      - domain: fidonet.org.ua
+      - domain: neolurk.org
+      - domain: znanija.com
+      - domain: ficbook.net
+      - domain: ficbook.com
+      - domain: flibusta.is
+      - domain: lib.social
+      - domain: cdnlibs.org
+      - domain: mangalib.org
+      - domain: forumlib.me
+      - domain: 4pda.to
+      - domain: 4pda.ws
+      # Torrent trackers
+      - domain: rutracker.org
+      - domain: rutracker.net
+      - domain: rutracker.nl
+      - domain: rutracker.cc
+      - domain: nnmclub.to
+      - domain: nnmstatic.win
+      - domain: rutor.info
+      - domain: rutor.is
+      - domain: rustorka.com
+      - domain: megapeer.vip
+      - domain: lostfilm.tv
+      - domain: newstudio.tv
+      - domain: zannn.top
+      # Shops, finance
+      - domain: walmart.com
+      - domain: bestchange.com
+      - domain: bestchange.net
+      - domain: bestchange.ru
+
   # Example of every entry kind. `enabled: false`: validated on every build, never published.
   # Copy entries from here into a real list; the values are illustrative.
   example:
@@ -100,5 +460,5 @@ profiles:
       name: Gesu selective
       default_outbound: direct
       # Order matters: rules are applied top to bottom.
-      lists: [p2p-spies, ru-extra]
+      lists: [p2p-spies, ads, ru-direct, telegram, discord, youtube, services, ru-extra]
 

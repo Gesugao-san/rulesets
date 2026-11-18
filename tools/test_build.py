@@ -100,6 +100,17 @@ def fake_fetch(endpoint: str, params: dict) -> dict:
   raise AssertionError(endpoint)
 
 
+def fake_catalog(url: str) -> str:
+  """Stand-in for Throne's srslist.h: every name used in rules.yaml plus a few extras."""
+  names = set(re.findall(r"ruleset:\s*((?:geosite|geoip)-[^\s#]+)", (REPO_ROOT / "rules.yaml").read_text(encoding="utf-8")))
+  names |= {"geosite-youtube", "geoip-telegram"}
+  return "\n".join(f'{{"{n}", "https://example.org/{n}.srs"}},' for n in sorted(names))
+
+
+def failing_text(url: str) -> str:
+  raise OSError("network down")
+
+
 def failing_fetch(endpoint: str, params: dict) -> dict:
   raise OSError("network down")
 
@@ -147,7 +158,30 @@ class ValidationTests(unittest.TestCase):
           action: proxy
           entries:
             - domain: a.b.example
-    """, "second level")
+    """, "eTLD+1")
+
+  def test_public_suffix_rejected(self):
+    self.assert_rejected("""
+      lists:
+        x:
+          action: proxy
+          entries:
+            - domain: pages.dev
+    """, "public suffix")
+
+  def test_etld_plus_one_accepted(self):
+    # eTLD+1 by the PSL, though deeper than two labels.
+    with tempfile.TemporaryDirectory() as tmp:
+      path = write_rules(Path(tmp), """
+        lists:
+          x:
+            action: proxy
+            entries:
+              - domain: fidonet.org.ua
+              - domain: youtubei.googleapis.com
+      """)
+      _, lists, _ = build.load_rules(path)
+      self.assertEqual(lists["x"].domains, ["fidonet.org.ua", "youtubei.googleapis.com"])
 
   def test_third_level_with_exception(self):
     with tempfile.TemporaryDirectory() as tmp:
@@ -245,6 +279,16 @@ class ValidationTests(unittest.TestCase):
             - country: XX
     """, "country code")
 
+  def test_bad_ruleset(self):
+    for value, fragment in (("https://example.org/list.json", ".srs file"), ("youtube", "rule-set name")):
+      self.assert_rejected(f"""
+        lists:
+          x:
+            action: proxy
+            entries:
+              - ruleset: {value}
+      """, fragment)
+
   def test_bad_continent(self):
     self.assert_rejected("""
       lists:
@@ -308,10 +352,10 @@ class ValidationTests(unittest.TestCase):
 class SourceTests(unittest.TestCase):
   """Expansion of asn/country/continent entries, guards and snapshot fallback."""
 
-  def build_with(self, body: str, fetch=fake_fetch, snapshot: Path | None = None):
+  def build_with(self, body: str, fetch=fake_fetch, snapshot: Path | None = None, fetch_text=fake_catalog):
     tmp = Path(self.tmp.name)
     rules = write_rules(tmp, body)
-    return build.build(rules, tmp / "dist", None, Resolver(fetch=fetch, snapshot_dir=snapshot))
+    return build.build(rules, tmp / "dist", None, Resolver(fetch=fetch, snapshot_dir=snapshot, fetch_text=fetch_text))
 
   def setUp(self):
     self.tmp = tempfile.TemporaryDirectory()
@@ -367,6 +411,47 @@ class SourceTests(unittest.TestCase):
     """, fetch=failing_fetch, snapshot=snap)
     self.assertTrue(any("previous snapshot" in w for w in warnings))
 
+  def test_ruleset_name_and_link(self):
+    files, warnings = self.build_with("""
+      lists:
+        x:
+          action: proxy
+          entries:
+            - domain: example.com
+            - ruleset: geosite-youtube
+            - ruleset: https://example.net/custom.srs
+    """)
+    out = Path(self.tmp.name) / "dist"
+    self.assertEqual((out / "external/x.txt").read_text().split(), ["https://example.org/geosite-youtube.srs", "https://example.net/custom.srs"])
+    self.assertIn("resolved/rulesets.json", files)
+    desktop = (out / "nekobox/desktop-proxy.txt").read_text().split()
+    self.assertEqual(len(desktop), 3, "own .srs + two external")
+    self.assertTrue(any("NekoBox for Android" in w for w in warnings))
+
+  def test_ruleset_unknown_name(self):
+    with self.assertRaises(build.RulesError) as ctx:
+      self.build_with("""
+        lists:
+          x:
+            action: proxy
+            entries:
+              - ruleset: geosite-does-not-exist
+      """)
+    self.assertIn("not in Throne's catalog", str(ctx.exception))
+
+  def test_ruleset_catalog_snapshot(self):
+    snap = Path(self.tmp.name) / "prev"
+    (snap / "resolved").mkdir(parents=True)
+    (snap / "resolved/rulesets.json").write_text('{"geosite-youtube": "https://example.org/y.srs"}')
+    _, warnings = self.build_with("""
+      lists:
+        x:
+          action: proxy
+          entries:
+            - ruleset: geosite-youtube
+    """, snapshot=snap, fetch_text=failing_text)
+    self.assertTrue(any("rule-set catalog failed" in w for w in warnings))
+
   def test_no_snapshot_fails(self):
     with self.assertRaises(build.RulesError) as ctx:
       self.build_with("""
@@ -387,10 +472,10 @@ class OutputTests(unittest.TestCase):
     cls.tmp = tempfile.TemporaryDirectory()
     cls.out = Path(cls.tmp.name) / "dist"
     cls.sing_box = os.environ.get("SING_BOX")
-    cls.files, cls.warnings = build.build(REPO_ROOT / "rules.yaml", cls.out, cls.sing_box, Resolver(fetch=fake_fetch))
+    cls.files, cls.warnings = build.build(REPO_ROOT / "rules.yaml", cls.out, cls.sing_box, Resolver(fetch=fake_fetch, fetch_text=fake_catalog))
     cls.meta, all_lists, cls.profiles = build.load_rules(REPO_ROOT / "rules.yaml")
     cls.lists = {name: rl for name, rl in all_lists.items() if rl.enabled}
-    build.resolve_sources(cls.lists, Resolver(fetch=fake_fetch), [])
+    build.resolve_sources(cls.lists, Resolver(fetch=fake_fetch, fetch_text=fake_catalog), [])
 
   @classmethod
   def tearDownClass(cls):
@@ -447,6 +532,13 @@ class OutputTests(unittest.TestCase):
     for line in self.read("tixati/peerid-filter.txt"):
       self.assertTrue(line.endswith("*"))
       self.assertNotIn(" ", line)
+
+  def test_throne_includes_external(self):
+    obj = decode_throne(self.read("throne/selective.txt")[0])
+    urls = [u for r in obj["rules"] for u in r.get("rule_set", [])]
+    for rl in self.lists.values():
+      for url in rl.ruleset_urls:
+        self.assertIn(url, urls)
 
   def test_throne_roundtrip(self):
     for name in self.profiles:

@@ -9,7 +9,9 @@ Output (the --out directory, published by CI to the `release` branch):
   qbittorrent/  ipfilter.p2p, peer_blacklist.txt (Enhanced), update-ipfilter.ps1
   index.json, README.md
 
-  resolved/     <AS…|country-…|continent-…>.txt — prefixes behind asn/country/continent entries
+  resolved/     <AS…|country-…|continent-…>.txt — prefixes behind asn/country/continent entries;
+                rulesets.json — URLs of the rule-set names used
+  external/     <list>.txt, all-<action>.txt — URLs of external rule-sets (ruleset: entries)
   review.csv    origin AS of every ip entry, to decide by hand whether an asn entry fits
 
 Usage:
@@ -38,6 +40,7 @@ from pathlib import Path
 
 import yaml
 
+from psl import load_psl
 from sources import Resolver, SourceError, load_continents
 
 # Allowed list actions and what they become in Throne.
@@ -46,13 +49,16 @@ THRONE_ACTION = {
   "proxy": {"action": "route", "outbound": "proxy"},
   "direct": {"action": "route", "outbound": "direct"},
 }
-ENTRY_KINDS = ("domain", "ip", "peerid", "asn", "country", "continent")
+ENTRY_KINDS = ("domain", "ip", "peerid", "asn", "country", "continent", "ruleset")
+# Rule-set names as Throne knows them (geosite-youtube, geosite-category-ru@ads, geoip-telegram).
+RULESET_NAME_RE = re.compile(r"^(?:geosite|geoip)-[a-z0-9][a-z0-9@!._-]*$")
 # Entries expanded into prefixes at build time, with the default max_prefixes guard.
 # The guard stops a too-broad entry (e.g. a hosting AS) from slipping in unnoticed.
 SOURCE_KINDS = {"asn": 16, "country": 20_000, "continent": 200_000}
 # ASNs that are never routed on the Internet: 0, AS_TRANS, documentation, private, last.
 RESERVED_ASN = [(0, 0), (23456, 23456), (64496, 65551), (4_200_000_000, 4_294_967_295)]
 CONTINENTS = load_continents()
+PSL = load_psl()
 LIST_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 DOMAIN_LABEL_RE = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
 # Peer ID: printable ASCII without spaces; Enhanced compares only the first 8 chars.
@@ -96,6 +102,9 @@ class RuleList:
   # (kind, value, max_prefixes) for asn/country/continent entries.
   sources: list[tuple[str, object, int]] = field(default_factory=list)
   resolved: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = field(default_factory=list)
+  # External rule-sets: as written (names or URLs), and their URLs after resolution.
+  rulesets: list[str] = field(default_factory=list)
+  ruleset_urls: list[str] = field(default_factory=list)
 
   @property
   def all_networks(self) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
@@ -116,15 +125,20 @@ class RuleList:
 
 
 def check_domain(value: str, entry: dict, where: str) -> str:
-  """Validates a domain; only the second level (SLD) is allowed by default."""
+  """Validates a domain; by default it must be a registrable domain (eTLD+1, Public Suffix List)."""
   domain = str(value).strip().lower().rstrip(".")
   labels = domain.split(".")
   if len(labels) < 2 or not all(DOMAIN_LABEL_RE.match(label) for label in labels):
     raise RulesError(f"{where}: '{value}' is not a valid domain")
   if labels[-1].isdigit():
     raise RulesError(f"{where}: '{value}' looks like an IP, use ip:")
-  if len(labels) > 2 and not entry.get("sld_exception"):
-    raise RulesError(f"{where}: '{value}' is deeper than the second level; add sld_exception: <reason>")
+  if entry.get("sld_exception"):
+    return domain
+  registrable = PSL.registrable(domain)
+  if registrable is None:
+    raise RulesError(f"{where}: '{value}' is a public suffix itself (it covers unrelated sites); add sld_exception: <reason>")
+  if registrable != domain:
+    raise RulesError(f"{where}: '{value}' is deeper than its registrable domain (eTLD+1) {registrable}; use it or add sld_exception: <reason>")
   return domain
 
 
@@ -180,6 +194,19 @@ def check_continent(value, where: str) -> str:
   return code
 
 
+def check_ruleset(value, where: str) -> str:
+  """Validates a rule-set reference: a Throne catalog name or an https link to a .srs file."""
+  text = str(value).strip()
+  if text.startswith("https://"):
+    path = urllib.parse.urlsplit(text).path
+    if not path.endswith(".srs"):
+      raise RulesError(f"{where}: '{value}' — a rule-set link must point to a .srs file")
+    return text
+  if not RULESET_NAME_RE.match(text):
+    raise RulesError(f"{where}: '{value}' is neither a rule-set name (geosite-…, geoip-…) nor an https .srs link")
+  return text
+
+
 def check_max_prefixes(entry: dict, kind: str, where: str) -> int:
   """Reads the optional max_prefixes guard, falling back to the per-kind default."""
   value = entry.get("max_prefixes", SOURCE_KINDS[kind])
@@ -215,6 +242,7 @@ def parse_entry(rule_list: RuleList, entry: dict, where: str) -> None:
     "asn": lambda: rule_list.sources.append(("asn", check_asn(entry["asn"], where), check_max_prefixes(entry, "asn", where))),
     "country": lambda: rule_list.sources.append(("country", check_country(entry["country"], where), check_max_prefixes(entry, "country", where))),
     "continent": lambda: rule_list.sources.append(("continent", check_continent(entry["continent"], where), check_max_prefixes(entry, "continent", where))),
+    "ruleset": lambda: rule_list.rulesets.append(check_ruleset(entry["ruleset"], where)),
   }
   if "max_prefixes" in entry and kind not in SOURCE_KINDS:
     raise RulesError(f"{where}: max_prefixes applies only to {', '.join(SOURCE_KINDS)}")
@@ -245,7 +273,7 @@ def parse_list(name: str, raw: dict) -> RuleList:
     parse_entry(rule_list, entry, f"{where}.entries[{index}]")
 
   sources = [(kind, value) for kind, value, _ in rule_list.sources]
-  for label, values in (("domain", rule_list.domains), ("ip", rule_list.networks), ("peerid", rule_list.peerids), ("asn/country/continent", sources)):
+  for label, values in (("domain", rule_list.domains), ("ip", rule_list.networks), ("peerid", rule_list.peerids), ("asn/country/continent", sources), ("ruleset", rule_list.rulesets)):
     dupes = sorted({str(v) for v in values if values.count(v) > 1})
     if dupes:
       raise RulesError(f"{where}: duplicate {label}: {', '.join(dupes)}")
@@ -372,6 +400,31 @@ def gen_singbox(out: Path, lists: dict[str, RuleList], sing_box: str | None) -> 
   return files
 
 
+def list_ruleset_urls(meta: dict, rl: RuleList) -> list[str]:
+  """All .srs links of a list: its own built rule-set (if any), then external ones."""
+  own = [raw_url(meta, f"sing-box/{rl.name}.srs")] if singbox_source(rl) else []
+  return own + [u for u in rl.ruleset_urls if u not in own]
+
+
+def gen_external(out: Path, lists: dict[str, RuleList]) -> list[str]:
+  """external/: URLs of external rule-sets per list and per action (for Karing, sing-box, podkop)."""
+  files = []
+  by_action: dict[str, list[str]] = {}
+  for rl in lists.values():
+    if not rl.ruleset_urls:
+      continue
+    rel = f"external/{rl.name}.txt"
+    write_lines(out / rel, rl.ruleset_urls)
+    files.append(rel)
+    bucket = by_action.setdefault(rl.action, [])
+    bucket.extend(u for u in rl.ruleset_urls if u not in bucket)
+  for action, urls in by_action.items():
+    rel = f"external/all-{action}.txt"
+    write_lines(out / rel, urls)
+    files.append(rel)
+  return files
+
+
 def throne_profile(meta: dict, name: str, profile: dict, lists: dict[str, RuleList]) -> dict:
   """Throne profile object (kind throne-route-profile, v 1) with rule_set URLs to .srs."""
   rules = [
@@ -380,10 +433,11 @@ def throne_profile(meta: dict, name: str, profile: dict, lists: dict[str, RuleLi
   ]
   for list_name in profile["lists"]:
     rl = lists[list_name]
-    if singbox_source(rl) is None:
+    urls = list_ruleset_urls(meta, rl)
+    if not urls:
       continue
     rule = {"name": f"{rl.action}: {rl.name}", "type": "custom", **THRONE_ACTION[rl.action]}
-    rule["rule_set"] = [raw_url(meta, f"sing-box/{rl.name}.srs")]
+    rule["rule_set"] = urls
     rules.append(rule)
   return {
     "kind": "throne-route-profile",
@@ -410,18 +464,21 @@ def gen_throne(out: Path, meta: dict, lists: dict[str, RuleList], profiles: dict
   return files
 
 
-def gen_nekobox(out: Path, meta: dict, lists: dict[str, RuleList]) -> list[str]:
+def gen_nekobox(out: Path, meta: dict, lists: dict[str, RuleList], warnings: list[str]) -> list[str]:
   """NekoBox: desktop takes 'ruleset:<url>' lines; Android has no remote rule-sets, so plain lines to paste."""
   files = []
   for action in THRONE_ACTION:
     group = [rl for rl in lists.values() if rl.action == action]
     # Desktop (qr243vbi/nekobox): one 'ruleset:' line per list, pasted into the route of this action.
-    desktop = [f"ruleset:{raw_url(meta, f'sing-box/{rl.name}.srs')}" for rl in group if singbox_source(rl)]
+    desktop = [f"ruleset:{url}" for rl in group for url in list_ruleset_urls(meta, rl)]
     # Android (NekoBoxForAndroid): 'domain:' = domain_suffix in its route editor; IPs as plain CIDR.
     android = {
       "domains": [f"domain:{d}" for rl in group for d in rl.domains],
       "ips": [str(n) for rl in group for n in rl.all_networks],
     }
+    skipped = sum(len(rl.ruleset_urls) for rl in group)
+    if skipped:
+      warnings.append(f"NekoBox for Android: {skipped} external rule-set(s) of {action} lists skipped — it has no remote rule-sets")
     if desktop:
       write_lines(out / f"nekobox/desktop-{action}.txt", desktop)
       files.append(f"nekobox/desktop-{action}.txt")
@@ -573,12 +630,21 @@ def resolve_sources(lists: dict[str, RuleList], resolver: Resolver, warnings: li
       if not nets:
         warnings.append(f"{rl.name}: {key} resolved to no prefixes")
       rl.resolved.extend(nets)
+    for ref in rl.rulesets:
+      try:
+        rl.ruleset_urls.append(resolver.ruleset_url(ref))
+      except SourceError as exc:
+        raise RulesError(f"lists.{rl.name}: {exc}") from None
   warnings.extend(resolver.warnings)
 
 
 def gen_resolved(out: Path, resolver: Resolver) -> list[str]:
   """Snapshot of every expansion, so the next build can fall back on it."""
   files = []
+  if resolver.rulesets:
+    (out / "resolved").mkdir(parents=True, exist_ok=True)
+    (out / "resolved/rulesets.json").write_text(json.dumps(dict(sorted(resolver.rulesets.items())), indent=2) + "\n", encoding="utf-8", newline="\n")
+    files.append("resolved/rulesets.json")
   for kind_value, nets in sorted(resolver.cache.items()):
     rel = f"resolved/{kind_value}.txt"
     write_lines(out / rel, [str(n) for n in nets])
@@ -649,7 +715,8 @@ def build(rules_path: Path, out: Path, sing_box: str | None, resolver: Resolver 
   files += gen_podkop(out, lists, warnings)
   files += gen_singbox(out, lists, sing_box)
   files += gen_throne(out, meta, lists, profiles)
-  files += gen_nekobox(out, meta, lists)
+  files += gen_nekobox(out, meta, lists, warnings)
+  files += gen_external(out, lists)
   files += gen_tixati(out, lists, warnings)
   files += gen_qbittorrent(out, lists)
   files += gen_review(out, lists, resolver, warnings)
