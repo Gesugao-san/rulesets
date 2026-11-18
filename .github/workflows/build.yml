@@ -15,6 +15,7 @@ on:
       - rules.yml
       - tools/**
       - clients/**
+      - .github/workflows/build.yml
   workflow_dispatch:
   # Daily rebuild: asn/country/continent prefixes change without edits to rules.yml.
   # No change → no commit and no tag.
