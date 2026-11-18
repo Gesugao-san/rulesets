@@ -451,7 +451,9 @@ class OutputTests(unittest.TestCase):
       decompiled = self.out / "decompiled.json"
       subprocess.run([self.sing_box, "rule-set", "decompile", "--output", str(decompiled), str(self.out / rel)], check=True)
       back = json.loads(decompiled.read_text(encoding="utf-8"))
-      self.assertEqual(back["rules"], src["rules"], rel)
+      # sing-box sorts values on compile; order inside a rule-set does not matter.
+      normalize = lambda rules: [{k: sorted(v) if isinstance(v, list) else v for k, v in r.items()} for r in rules]
+      self.assertEqual(normalize(back["rules"]), normalize(src["rules"]), rel)
 
   def test_release_readmes(self):
     en, ru = (self.read(build.RELEASE_README[lang]["file"]) for lang in ("en", "ru"))
