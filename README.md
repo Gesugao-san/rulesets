@@ -6,6 +6,8 @@ Generated from `rules.yaml` in [Gesugao-san/rulesets](https://github.com/Gesugao
 
 Every build is also tagged `build-YYYY-MM-DD-N` (N is the CI run number). To pin a client to a build, replace `/release/` in a link with `/<tag>/`. Throne profiles inside a tag still load `.srs` from the `release` branch.
 
+- [`review.csv`](https://raw.githubusercontent.com/Gesugao-san/rulesets/release/review.csv)
+
 ## nekobox
 
 - [`nekobox/android-block.ips.txt`](https://raw.githubusercontent.com/Gesugao-san/rulesets/release/nekobox/android-block.ips.txt)

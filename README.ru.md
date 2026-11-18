@@ -6,6 +6,8 @@
 
 Каждая сборка также помечена тегом `build-YYYY-MM-DD-N` (N — номер прогона CI). Чтобы закрепить клиент на сборке, замените в ссылке `/release/` на `/<тег>/`. Профили Throne внутри тега всё равно берут `.srs` из ветки `release`.
 
+- [`review.csv`](https://raw.githubusercontent.com/Gesugao-san/rulesets/release/review.csv)
+
 ## nekobox
 
 - [`nekobox/android-block.ips.txt`](https://raw.githubusercontent.com/Gesugao-san/rulesets/release/nekobox/android-block.ips.txt)
