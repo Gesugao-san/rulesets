@@ -5,7 +5,7 @@ Output (the --out directory, published by CI to the `release` branch):
   podkop/       <list>.domains.lst, <list>.subnets.lst, all-<action>.*.lst
   sing-box/     <list>.json (+ .srs when --sing-box is given)
   throne/       <profile>.txt — throne://route/... link for a remote profile
-  tixati/       <list>.txt, all-block.txt, peerid-filter.txt
+  tixati/       <list>.p2p.txt, all-block.p2p.txt (P2P with CIDR), peerid-filter.txt
   qbittorrent/  ipfilter.p2p, peer_blacklist.txt (Enhanced), update-ipfilter.ps1
   index.json, README.md
 
@@ -515,14 +515,14 @@ def gen_tixati(out: Path, lists: dict[str, RuleList], warnings: list[str]) -> li
       continue
     if len(lines) == 1:
       warnings.append(f"{rl.name}: a single line — Tixati before 2.82 does not load such a file")
-    rel = f"tixati/{rl.name}.txt"
+    rel = f"tixati/{rl.name}.p2p.txt"
     write_lines(out / rel, lines)
     files.append(rel)
     all_block.extend(lines)
 
   if all_block:
-    write_lines(out / "tixati/all-block.txt", all_block)
-    files.append("tixati/all-block.txt")
+    write_lines(out / "tixati/all-block.p2p.txt", all_block)
+    files.append("tixati/all-block.p2p.txt")
   if peerids:
     # One line each in Settings → Peers → Client Filter → Peer ID → "never allow".
     write_lines(out / "tixati/peerid-filter.txt", [f"{p}*" for p in peerids])

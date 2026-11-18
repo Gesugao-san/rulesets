@@ -14,7 +14,7 @@
 | простые правила NekoBox / Throne `ruleset:<ссылка>` | ссылки на `.srs`, по строке на список | [NekoBox](https://github.com/qr243vbi/nekobox) (Windows, Linux) → `nekobox/desktop-<action>.txt` |
 | строки маршрутизации в стиле v2ray `domain:` / CIDR | домены и IP-подсети для ручной вставки | [NekoBox for Android](https://github.com/MatsuriDayo/NekoBoxForAndroid) (Android) → `nekobox/android-<action>.domains.txt`, `….ips.txt` |
 | простой список `.lst` | по одному домену или IPv4-подсети в строке | [podkop](https://github.com/itdoginfo/podkop) (OpenWrt) → `podkop/all-<action>.domains.lst`, `….subnets.lst` |
-| P2P с CIDR `.p2p.txt` (`label:CIDR`) | IP-фильтр, IPv4 и IPv6 | [Tixati](https://www.tixati.com) (Windows, Linux) → `tixati/all-block.txt` |
+| P2P с CIDR `.p2p.txt` (`label:CIDR`) | IP-фильтр, IPv4 и IPv6 | [Tixati](https://www.tixati.com) (Windows, Linux) → `tixati/all-block.p2p.txt` |
 | PeerGuardian P2P `.p2p` (`label:начало-конец`) | IP-фильтр, IPv4 и IPv6 | [qBittorrent](https://www.qbittorrent.org), [qBittorrent Enhanced](https://github.com/c0re100/qBittorrent-Enhanced-Edition) (Windows, Linux, macOS) → `qbittorrent/ipfilter.p2p` |
 | фильтр Peer ID: шаблон / PCRE | префиксы Peer ID клиентов-шпионов | [Tixati](https://www.tixati.com) → `tixati/peerid-filter.txt` (`-XX0001-*`)<br>[qBittorrent Enhanced](https://github.com/c0re100/qBittorrent-Enhanced-Edition) → `qbittorrent/peer_blacklist.txt` (`^-XX0001- .*`) |
 | скрипт PowerShell `.ps1` | обновляет IP-фильтр и список Peer ID | [qBittorrent](https://www.qbittorrent.org), [qBittorrent Enhanced](https://github.com/c0re100/qBittorrent-Enhanced-Edition) (Windows) → `qbittorrent/update-ipfilter.ps1` |
@@ -39,7 +39,11 @@ LuCI → **Services → Podkop**. Списки обновляются по ра�
    ```
    https://raw.githubusercontent.com/Gesugao-san/rulesets/release/podkop/all-proxy.domains.lst
    ```
-3. Save & Apply.
+3. По желанию — внешние rule-set'ы (записи `ruleset:`): podkop принимает ссылки на `.srs` как удалённые списки, по одной на строку из
+   ```
+   https://raw.githubusercontent.com/Gesugao-san/rulesets/release/external/all-proxy.txt
+   ```
+4. Save & Apply.
 
 IPv6 в podkop не попадает: его списки подсетей принимают только IPv4.
 
@@ -54,6 +58,10 @@ throne://remoteroute/aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0dlc3VnYW8tc2F
 ```
 https://raw.githubusercontent.com/Gesugao-san/rulesets/release/throne/selective.txt
 ```
+
+Правила идут от точных к широким: блок-списки, затем `ru-direct`, списки сервисов (`telegram`, `discord`, `youtube`,
+`services`, `ru-extra`) и только потом широкие внешние наборы `ru-blocked` (proxy) и `ru-broad` (direct).
+Поэтому явный выбор в `rules.yaml` всегда важнее большого внешнего списка; порядок задаётся в `profiles` в `rules.yaml`.
 
 При каждом обновлении Throne перезаписывает правила удалённого профиля — личные правила держите в отдельном локальном профиле.
 Ссылки на GitHub Throne берёт через jsDelivr, поэтому изменения доходят с задержкой кэша.
@@ -85,11 +93,16 @@ https://raw.githubusercontent.com/Gesugao-san/rulesets/release/nekobox/android-b
 ### Karing
 
 Правила отвода (Diversion) → **Add New Diversion Group** → вставить ссылку на `.srs` и сохранить → Custom Diversion Group → выбрать группу и задать действие.
+По группе на ссылку: `sing-box/<список>.srs` для каждого списка из `rules.yaml`, например
 ```
-https://raw.githubusercontent.com/Gesugao-san/rulesets/release/sing-box/p2p-spies.srs
+https://raw.githubusercontent.com/Gesugao-san/rulesets/release/sing-box/telegram.srs
+```
+плюс внешние rule-set'ы, по ссылке на строку в
+```
+https://raw.githubusercontent.com/Gesugao-san/rulesets/release/external/all-proxy.txt
 ```
 ```
-https://raw.githubusercontent.com/Gesugao-san/rulesets/release/sing-box/ru-extra.srs
+https://raw.githubusercontent.com/Gesugao-san/rulesets/release/external/all-block.txt
 ```
 На всех платформах одинаково. Документация Karing предупреждает, что `.srs` больше 3 МБ могут не влезть в память на Android и iOS — учитывайте это для стран и континентов.
 
@@ -97,7 +110,7 @@ https://raw.githubusercontent.com/Gesugao-san/rulesets/release/sing-box/ru-extra
 
 1. **IP Filter** (значок крепостной стены на панели) → **Add** → URL источника, затем задайте интервал автообновления:
    ```
-   https://raw.githubusercontent.com/Gesugao-san/rulesets/release/tixati/all-block.txt
+   https://raw.githubusercontent.com/Gesugao-san/rulesets/release/tixati/all-block.p2p.txt
    ```
 2. **Settings → Peers → Client Filter → Peer ID** → «never allow»: добавьте каждую строку из
    ```
@@ -145,13 +158,15 @@ Enhanced читает `peer_blacklist.txt` только при запуске: �
 2. Открыть PR — CI прогонит проверки и тесты, но ничего не опубликует.
 3. После слияния в `main` CI соберёт и запушит `release`.
 
-Виды записей: `domain`, `ip`, `peerid`, `asn`, `country`, `continent`. Список `example` в конце `rules.yaml` показывает каждый;
+Виды записей: `domain`, `ip`, `peerid`, `asn`, `country`, `continent`, `ruleset`. Список `example` в конце `rules.yaml` показывает каждый;
 у него `enabled: false`, поэтому он проверяется при каждой сборке, но никогда не публикуется.
 
 Сборка падает, если в `rules.yaml`:
 
 - частный/служебный диапазон или подсеть с ненулевыми битами хоста;
-- домен глубже второго уровня без `sld_exception: <причина>`;
+- домен, который не является своим регистрируемым доменом (eTLD+1 по [Public Suffix List](https://publicsuffix.org/)),
+  или сам является публичным суффиксом (`pages.dev`, `discordsays.com`), без `sld_exception: <причина>`;
+- `ruleset:`, который не является ни именем из каталога Throne, ни https-ссылкой на `.srs`;
 - запись в списке `block` без `evidence`;
 - Peer ID длиннее 8 символов (Enhanced сравнивает только первые 8) или с пробелом;
 - дубли или подсеть, вложенная в другую;
@@ -183,15 +198,17 @@ python3 -m unittest tools/test_build.py -v
 
 ## Источники данных
 
-Записи `asn`, `country` и `continent` разворачиваются при сборке; результат сохраняется в `release/resolved/`, так что любое изменение видно диффом.
+Записи `asn`, `country`, `continent` и `ruleset` разворачиваются при сборке; результат сохраняется в `release/resolved/`, так что любое изменение видно диффом.
 
 | Запись | Источник | Примечания |
 |---|---|---|
 | `asn` | [RIPEstat announced-prefixes](https://stat.ripe.net/docs/data-api/api-endpoints/announced-prefixes) (RIPE NCC) | Данные BGP с коллекторов RIS по всему миру, не только регион RIPE. Берутся только префиксы, анонсируемые на конец двухнедельного окна |
 | `country` | [RIPEstat country-resource-list](https://stat.ripe.net/docs/data-api/api-endpoints/country-resource-list) | Строится по статистике делегирования RIR: страна **регистрации**, а не место использования (это не геолокация) |
+| `ruleset` | Каталог rule-set'ов Throne: [`srslist.h`](https://github.com/throneproj/routeprofiles/tree/rule-set) в throneproj/routeprofiles | Имя → ссылка на `.srs`, ровно как в Throne (в основном [MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat), `geosite-ru-*` — от [runetfreedom](https://github.com/runetfreedom/russia-v2ray-rules-dat)). Карта сохраняется в `resolved/rulesets.json`, ссылки публикуются в `external/` |
+| проверка `domain` | [Public Suffix List](https://publicsuffix.org/) ([MPL 2.0](https://mozilla.org/MPL/2.0/)), снимок в [`tools/data/public_suffix_list.dat`](tools/data/public_suffix_list.dat) | Обе секции, ICANN и частная: `googleapis.com` и `pages.dev` считаются публичными суффиксами |
 | `continent` | [GeoNames](https://www.geonames.org/) countryInfo ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)), снимок в [`tools/data/continents.json`](tools/data/continents.json) | Страна → континент, дальше каждая страна как выше. GeoNames относит Россию к `EU`, Турцию к `AS` |
 
-Если RIPEstat недоступен, берётся предыдущий снимок из `release` с предупреждением; без снимка сборка падает, а не публикует пустой список.
+Если RIPEstat или каталог rule-set'ов недоступен, берётся предыдущий снимок из `release` с предупреждением; без снимка сборка падает, а не публикует пустой список.
 CI также пересобирает всё ежедневно: префиксы меняются без правок `rules.yaml`.
 
 `release/review.csv` — таблица по каждой записи `ip`: анонсированный префикс, который её покрывает, исходный AS

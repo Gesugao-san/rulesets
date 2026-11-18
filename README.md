@@ -14,7 +14,7 @@ and CI builds every client format from it into the [`release`](../../tree/releas
 | NekoBox / Throne simple rules `ruleset:<link>` | `.srs` links, one line per list | [NekoBox](https://github.com/qr243vbi/nekobox) (Windows, Linux) → `nekobox/desktop-<action>.txt` |
 | v2ray-style routing lines `domain:` / CIDR | domains and IP subnets to paste by hand | [NekoBox for Android](https://github.com/MatsuriDayo/NekoBoxForAndroid) (Android) → `nekobox/android-<action>.domains.txt`, `….ips.txt` |
 | plain list `.lst` | one domain or IPv4 subnet per line | [podkop](https://github.com/itdoginfo/podkop) (OpenWrt) → `podkop/all-<action>.domains.lst`, `….subnets.lst` |
-| P2P with CIDR `.p2p.txt` (`label:CIDR`) | IP filter, IPv4 and IPv6 | [Tixati](https://www.tixati.com) (Windows, Linux) → `tixati/all-block.txt` |
+| P2P with CIDR `.p2p.txt` (`label:CIDR`) | IP filter, IPv4 and IPv6 | [Tixati](https://www.tixati.com) (Windows, Linux) → `tixati/all-block.p2p.txt` |
 | PeerGuardian P2P `.p2p` (`label:start-end`) | IP filter, IPv4 and IPv6 | [qBittorrent](https://www.qbittorrent.org), [qBittorrent Enhanced](https://github.com/c0re100/qBittorrent-Enhanced-Edition) (Windows, Linux, macOS) → `qbittorrent/ipfilter.p2p` |
 | Peer ID filter: wildcard / PCRE | Peer ID prefixes of spy clients | [Tixati](https://www.tixati.com) → `tixati/peerid-filter.txt` (`-XX0001-*`)<br>[qBittorrent Enhanced](https://github.com/c0re100/qBittorrent-Enhanced-Edition) → `qbittorrent/peer_blacklist.txt` (`^-XX0001- .*`) |
 | PowerShell script `.ps1` | updates the IP filter and the Peer ID list | [qBittorrent](https://www.qbittorrent.org), [qBittorrent Enhanced](https://github.com/c0re100/qBittorrent-Enhanced-Edition) (Windows) → `qbittorrent/update-ipfilter.ps1` |
@@ -39,7 +39,11 @@ LuCI → **Services → Podkop**. Lists update on podkop's own schedule.
    ```
    https://raw.githubusercontent.com/Gesugao-san/rulesets/release/podkop/all-proxy.domains.lst
    ```
-3. Save & Apply.
+3. Optionally, external rule-sets (`ruleset:` entries): podkop also takes `.srs` links as remote lists, one per line of
+   ```
+   https://raw.githubusercontent.com/Gesugao-san/rulesets/release/external/all-proxy.txt
+   ```
+4. Save & Apply.
 
 IPv6 is not exported to podkop: its subnet lists accept IPv4 only.
 
@@ -54,6 +58,10 @@ throne://remoteroute/aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0dlc3VnYW8tc2F
 ```
 https://raw.githubusercontent.com/Gesugao-san/rulesets/release/throne/selective.txt
 ```
+
+Rules go from precise to broad: block lists, then `ru-direct`, the service lists (`telegram`, `discord`, `youtube`,
+`services`, `ru-extra`), and only then the broad external sets `ru-blocked` (proxy) and `ru-broad` (direct).
+An explicit choice in `rules.yaml` therefore always beats a big external list; the order is set in `profiles` in `rules.yaml`.
 
 On every update Throne overwrites the rules of a remote profile — keep personal rules in a separate local profile.
 Throne fetches GitHub links through jsDelivr, so changes arrive with a cache delay.
@@ -85,11 +93,16 @@ Re-paste after changes. Large lists (countries, continents) are impractical here
 ### Karing
 
 Diversion rules → **Add New Diversion Group** → paste a `.srs` link and save → Custom Diversion Group → select the group and set its action.
+One group per link: `sing-box/<list>.srs` for every list in `rules.yaml`, for example
 ```
-https://raw.githubusercontent.com/Gesugao-san/rulesets/release/sing-box/p2p-spies.srs
+https://raw.githubusercontent.com/Gesugao-san/rulesets/release/sing-box/telegram.srs
+```
+plus the external rule-sets, one link per line in
+```
+https://raw.githubusercontent.com/Gesugao-san/rulesets/release/external/all-proxy.txt
 ```
 ```
-https://raw.githubusercontent.com/Gesugao-san/rulesets/release/sing-box/ru-extra.srs
+https://raw.githubusercontent.com/Gesugao-san/rulesets/release/external/all-block.txt
 ```
 The same steps on every platform. Karing's own docs warn that `.srs` files over 3 MB may exceed memory limits on Android and iOS — keep country and continent lists in mind.
 
@@ -97,7 +110,7 @@ The same steps on every platform. Karing's own docs warn that `.srs` files over 
 
 1. **IP Filter** (castle wall icon on the toolbar) → **Add** → source URL, then set an auto-reload interval:
    ```
-   https://raw.githubusercontent.com/Gesugao-san/rulesets/release/tixati/all-block.txt
+   https://raw.githubusercontent.com/Gesugao-san/rulesets/release/tixati/all-block.p2p.txt
    ```
 2. **Settings → Peers → Client Filter → Peer ID** → "never allow": add each line of
    ```
@@ -145,13 +158,15 @@ The `release` branch has its own `README.md` and `README.ru.md` with direct link
 2. Open a PR — CI runs validation and tests but publishes nothing.
 3. After merging into `main`, CI builds and pushes `release`.
 
-Entry kinds: `domain`, `ip`, `peerid`, `asn`, `country`, `continent`. The `example` list at the end of `rules.yaml` shows each of them;
+Entry kinds: `domain`, `ip`, `peerid`, `asn`, `country`, `continent`, `ruleset`. The `example` list at the end of `rules.yaml` shows each of them;
 it has `enabled: false`, so it is validated on every build but never published.
 
 The build fails if `rules.yaml` contains:
 
 - a private/reserved range or a subnet with host bits set;
-- a domain deeper than the second level without `sld_exception: <reason>`;
+- a domain that is not its own registrable domain (eTLD+1 by the [Public Suffix List](https://publicsuffix.org/)),
+  or is a public suffix itself (`pages.dev`, `discordsays.com`), without `sld_exception: <reason>`;
+- a `ruleset:` that is neither a name from Throne's catalog nor an https link to a `.srs` file;
 - an entry in a `block` list without `evidence`;
 - a Peer ID longer than 8 characters (Enhanced compares only the first 8) or with a space;
 - duplicates or a subnet nested in another one;
@@ -183,15 +198,17 @@ A publish that changes nothing in `release` creates no commit, no tag and no Git
 
 ## Data sources
 
-`asn`, `country` and `continent` entries are expanded at build time; results are saved in `release/resolved/` so every change is visible as a diff.
+`asn`, `country`, `continent` and `ruleset` entries are resolved at build time; results are saved in `release/resolved/` so every change is visible as a diff.
 
 | Entry | Source | Notes |
 |---|---|---|
 | `asn` | [RIPEstat announced-prefixes](https://stat.ripe.net/docs/data-api/api-endpoints/announced-prefixes) (RIPE NCC) | BGP data from RIS collectors worldwide, not only the RIPE region. Only prefixes still announced at the end of the 2-week window are taken |
 | `country` | [RIPEstat country-resource-list](https://stat.ripe.net/docs/data-api/api-endpoints/country-resource-list) | Built from RIR delegation stats: the country of **registration**, not where addresses are used (not geolocation) |
+| `ruleset` | Throne's rule-set catalog: [`srslist.h`](https://github.com/throneproj/routeprofiles/tree/rule-set) in throneproj/routeprofiles | Name → `.srs` link, exactly as in Throne (mostly [MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat), `geosite-ru-*` from [runetfreedom](https://github.com/runetfreedom/russia-v2ray-rules-dat)). The map is saved to `resolved/rulesets.json`; links are published in `external/` |
+| `domain` check | [Public Suffix List](https://publicsuffix.org/) ([MPL 2.0](https://mozilla.org/MPL/2.0/)), snapshot in [`tools/data/public_suffix_list.dat`](tools/data/public_suffix_list.dat) | Both ICANN and private sections: `googleapis.com` and `pages.dev` count as public suffixes |
 | `continent` | [GeoNames](https://www.geonames.org/) countryInfo ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)), snapshot in [`tools/data/continents.json`](tools/data/continents.json) | Country → continent, then each country as above. GeoNames puts Russia in `EU` and Turkey in `AS` |
 
-If RIPEstat is unreachable, the previous snapshot from `release` is reused with a warning; with no snapshot the build fails rather than publish an empty list.
+If RIPEstat or the rule-set catalog is unreachable, the previous snapshot from `release` is reused with a warning; with no snapshot the build fails rather than publish an empty list.
 CI also rebuilds daily, because prefixes change without edits to `rules.yaml`.
 
 `release/review.csv` lists every `ip` entry with the announced prefix covering it, its origin AS
