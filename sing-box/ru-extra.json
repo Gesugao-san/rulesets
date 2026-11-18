@@ -1,0 +1,12 @@
+{
+  "version": 3,
+  "rules": [
+    {
+      "domain_suffix": [
+        "ntc.party",
+        "tixati.com",
+        "tixati.net"
+      ]
+    }
+  ]
+}
