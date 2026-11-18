@@ -8,9 +8,18 @@
 #                           second level only, otherwise `sld_exception: <reason>` is required
 #   ip: 198.51.100.0/24   — IPv4/IPv6 address or subnet (no host bits set)
 #   peerid: -XX0001-      — Peer ID prefix (up to 8 chars), only in lists with action: block
+#   asn: 64500            — all prefixes the AS announces (RIPEstat announced-prefixes)
+#   country: XX           — all prefixes REGISTERED to the country (RIPEstat country-resource-list,
+#                           based on RIR delegation stats — registration, not geolocation)
+#   continent: EU         — all countries of a GeoNames continent: AF AN AS EU NA OC SA
+#
+# asn/country/continent are expanded at build time; the result lands in release/resolved/.
+# Each has a `max_prefixes` guard (defaults: asn 16, country 20000, continent 200000):
+# the build fails if an entry expands to more, so a broad entry is always a deliberate choice.
 #
 # Every entry in a list with action: block must have `evidence` — links that justify it.
 # The `note` field is a free-form comment and never reaches the output files.
+# A list with `enabled: false` is validated but builds nothing (see `example` at the end).
 
 meta:
   repo: Gesugao-san/rulesets
@@ -21,14 +30,19 @@ lists:
     action: block
     title: P2P spy bots (fake 100% bitfield, no real data)
     entries:
-      - ip: 31.200.249.0/24
-        note: Teleport Rus LLC (AS216158); the RIPE contact matches the Teleport Media CEO
+      - asn: 216158
+        note: >-
+          Teleport Rus LLC; announces only 31.200.249.0/24 (2026-11-18), the whole AS is the bot network;
+          the RIPE contact matches the Teleport Media CEO
+        max_prefixes: 4
         evidence:
           - https://forum.tixati.com/support/8669
           - https://forum.tixati.com/support/8351
           - https://forum.tixati.com/support/8857
       - ip: 185.16.215.0/24
-        note: Start2 / NETRACK (AS61400); same ORG-SL744-RIPE that sponsors AS216158
+        note: >-
+          Start2 / NETRACK (AS61400), same ORG-SL744-RIPE that sponsors AS216158;
+          blocked as a subnet, NOT by ASN: AS61400 is a hosting provider with ~90 prefixes
         evidence:
           - https://forum.tixati.com/support/8669
           - https://forum.tixati.com/support/8857
@@ -52,6 +66,34 @@ lists:
       - domain: tixati.net
         note: dhtbootstrap-*.tixati.net
 
+  # Example of every entry kind. `enabled: false`: validated on every build, never published.
+  # Copy entries from here into a real list; the values are illustrative.
+  example:
+    enabled: false
+    action: block
+    title: Example — ignored by the build
+    entries:
+      - domain: example.com
+        evidence: [https://www.iana.org/help/example-domains]
+      - domain: www.example.com
+        sld_exception: deeper than SLD on purpose, explain why here
+        evidence: [https://www.iana.org/help/example-domains]
+      - ip: 192.0.32.0/20
+        note: IPv4 or IPv6, no host bits set
+        evidence: [https://example.com/why]
+      - peerid: -XX0001-
+        note: up to 8 characters; a trailing * is optional
+        evidence: [https://example.com/why]
+      - asn: 16876
+        max_prefixes: 8
+        evidence: [https://example.com/why]
+      - country: AQ
+        note: registration country, not geolocation
+        evidence: [https://example.com/why]
+      - continent: AN
+        max_prefixes: 50
+        evidence: [https://example.com/why]
+
 profiles:
   throne:
     selective:
@@ -59,3 +101,4 @@ profiles:
       default_outbound: direct
       # Order matters: rules are applied top to bottom.
       lists: [p2p-spies, ru-extra]
+

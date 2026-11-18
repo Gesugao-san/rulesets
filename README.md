@@ -5,14 +5,17 @@
 A single source of filtering and routing rules. Edit **only** [`rules.yml`](rules.yml);
 everything else is built by CI and published to the [`release`](../../tree/release) branch.
 
-| Client | What is built | Where in `release` |
-|---|---|---|
-| podkop (OpenWrt) | `.lst`: domains and IPv4 subnets, per list and aggregated per action | `podkop/` |
-| sing-box | rule-set `.json` (version 3) and `.srs` | `sing-box/` |
-| Throne | remote route profile `throne://route/…` | `throne/` |
-| Tixati | IP filter `label:CIDR` (IPv4 and IPv6), Peer ID filter | `tixati/` |
-| qBittorrent | IP filter `ipfilter.p2p`, update script | `qbittorrent/` |
-| qBittorrent Enhanced | all of the above + `peer_blacklist.txt` (Peer ID) | `qbittorrent/` |
+| Client | Platform | What is built | Where in `release` |
+|---|---|---|---|
+| [podkop](https://github.com/itdoginfo/podkop) | OpenWrt | `.lst`: domains and IPv4 subnets, per list and aggregated per action | `podkop/` |
+| [sing-box](https://sing-box.sagernet.org) | any | rule-set `.json` (version 3) and `.srs` | `sing-box/` |
+| [Throne](https://github.com/throneproj/Throne) | Windows, Linux, macOS | remote route profile `throne://route/…` | `throne/` |
+| [NekoBox](https://github.com/qr243vbi/nekobox) | Windows, Linux | `ruleset:` lines with `.srs` links | `nekobox/desktop-*` |
+| [NekoBox for Android](https://github.com/MatsuriDayo/NekoBoxForAndroid) | Android | domain and IP lines to paste | `nekobox/android-*` |
+| [Karing](https://github.com/KaringX/karing) | Android, iOS, Windows, macOS, Linux | `.srs` links (shared with sing-box) | `sing-box/` |
+| [Tixati](https://www.tixati.com) | Windows, Linux | IP filter `label:CIDR` (IPv4 and IPv6), Peer ID filter | `tixati/` |
+| [qBittorrent](https://www.qbittorrent.org) | Windows, Linux, macOS | IP filter `ipfilter.p2p`, update script | `qbittorrent/` |
+| [qBittorrent Enhanced](https://github.com/c0re100/qBittorrent-Enhanced-Edition) | Windows, Linux, macOS | all of the above + `peer_blacklist.txt` (Peer ID) | `qbittorrent/` |
 
 The full list of files with links is in `README.md` and `index.json` on the `release` branch.
 
@@ -46,6 +49,40 @@ IPv6 is not exported to podkop: its subnet lists accept IPv4 only.
 
 On every update Throne overwrites the rules of a remote profile — keep personal rules in a separate local profile.
 Throne fetches GitHub links through jsDelivr, so changes arrive with a cache delay.
+
+### NekoBox (desktop)
+
+Routing settings → route of the needed outbound (Block / Proxy) → paste the lines from:
+```
+https://raw.githubusercontent.com/Gesugao-san/rulesets/release/nekobox/desktop-block.txt
+```
+```
+https://raw.githubusercontent.com/Gesugao-san/rulesets/release/nekobox/desktop-proxy.txt
+```
+Each line is `ruleset:<.srs link>`; NekoBox downloads the rule-sets itself, so updates arrive automatically.
+
+### NekoBox for Android
+
+NekoBox for Android has no remote rule-sets — only its bundled `geoip:`/`geosite:`. Rules are pasted as text and are **not** updated automatically:
+Route → new rule → *domain* field: lines from the first file, *IP* field: lines from the second, outbound Block / Proxy.
+```
+https://raw.githubusercontent.com/Gesugao-san/rulesets/release/nekobox/android-proxy.domains.txt
+```
+```
+https://raw.githubusercontent.com/Gesugao-san/rulesets/release/nekobox/android-block.ips.txt
+```
+Re-paste after changes. Large lists (countries, continents) are impractical here.
+
+### Karing
+
+Diversion rules → **Add New Diversion Group** → paste a `.srs` link and save → Custom Diversion Group → select the group and set its action.
+```
+https://raw.githubusercontent.com/Gesugao-san/rulesets/release/sing-box/p2p-spies.srs
+```
+```
+https://raw.githubusercontent.com/Gesugao-san/rulesets/release/sing-box/ru-extra.srs
+```
+The same steps on every platform. Karing's own docs warn that `.srs` files over 3 MB may exceed memory limits on Android and iOS — keep country and continent lists in mind.
 
 ### Tixati
 
@@ -88,6 +125,9 @@ Every build that changes `release` is also tagged `build-YYYY-MM-DD-N` (N is the
 To pin a client to a build or roll back, use `/<tag>/` instead of `/release/` in the link.
 Throne profiles inside a tag still load `.srs` from the `release` branch.
 
+Each tag also gets a [GitHub Release](../../releases) with every file attached separately (folder becomes a prefix:
+`podkop/all-block.subnets.lst` → `podkop.all-block.subnets.lst`). The 30 newest releases are kept; older tags stay.
+
 The `release` branch has its own `README.md` and `README.ru.md` with direct links to every file.
 
 ## Editing
@@ -96,6 +136,9 @@ The `release` branch has its own `README.md` and `README.ru.md` with direct link
 2. Open a PR — CI runs validation and tests but publishes nothing.
 3. After merging into `main`, CI builds and pushes `release`.
 
+Entry kinds: `domain`, `ip`, `peerid`, `asn`, `country`, `continent`. The `example` list at the end of `rules.yml` shows each of them;
+it has `enabled: false`, so it is validated on every build but never published.
+
 The build fails if `rules.yml` contains:
 
 - a private/reserved range or a subnet with host bits set;
@@ -103,7 +146,10 @@ The build fails if `rules.yml` contains:
 - an entry in a `block` list without `evidence`;
 - a Peer ID longer than 8 characters (Enhanced compares only the first 8) or with a space;
 - duplicates or a subnet nested in another one;
-- a Throne profile referencing a list that does not exist.
+- a Throne profile referencing a list that does not exist or is disabled;
+- a private/reserved AS number, an unknown country or continent code;
+- an `asn`/`country`/`continent` entry expanding to more prefixes than its `max_prefixes`
+  (defaults: 16 / 20000 / 200000) — so a broad block is always a deliberate choice.
 
 Locally:
 
@@ -113,6 +159,19 @@ python3 tools/build.py --out dist                      # without .srs
 python3 tools/build.py --out dist --sing-box sing-box  # with .srs
 python3 -m unittest tools/test_build.py -v
 ```
+
+## Data sources
+
+`asn`, `country` and `continent` entries are expanded at build time; results are saved in `release/resolved/` so every change is visible as a diff.
+
+| Entry | Source | Notes |
+|---|---|---|
+| `asn` | [RIPEstat announced-prefixes](https://stat.ripe.net/docs/data-api/api-endpoints/announced-prefixes) (RIPE NCC) | BGP data from RIS collectors worldwide, not only the RIPE region. Only prefixes still announced at the end of the 2-week window are taken |
+| `country` | [RIPEstat country-resource-list](https://stat.ripe.net/docs/data-api/api-endpoints/country-resource-list) | Built from RIR delegation stats: the country of **registration**, not where addresses are used (not geolocation) |
+| `continent` | [GeoNames](https://www.geonames.org/) countryInfo ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)), snapshot in [`tools/data/continents.json`](tools/data/continents.json) | Country → continent, then each country as above. GeoNames puts Russia in `EU` and Turkey in `AS` |
+
+If RIPEstat is unreachable, the previous snapshot from `release` is reused with a warning; with no snapshot the build fails rather than publish an empty list.
+CI also rebuilds daily, because prefixes change without edits to `rules.yml`.
 
 ## What is not here and why
 

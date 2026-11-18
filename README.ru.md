@@ -5,14 +5,17 @@
 Единый источник правил фильтрации и маршрутизации. Правится **только** [`rules.yml`](rules.yml);
 всё остальное собирает CI и публикует в ветку [`release`](../../tree/release).
 
-| Клиент | Что собирается | Где лежит в `release` |
-|---|---|---|
-| podkop (OpenWrt) | `.lst`: домены и IPv4-подсети, по спискам и сводные по действию | `podkop/` |
-| sing-box | rule-set `.json` (version 3) и `.srs` | `sing-box/` |
-| Throne | удалённый маршрутный профиль `throne://route/…` | `throne/` |
-| Tixati | IP-фильтр `label:CIDR` (IPv4 и IPv6), фильтр Peer ID | `tixati/` |
-| qBittorrent | IP-фильтр `ipfilter.p2p`, скрипт обновления | `qbittorrent/` |
-| qBittorrent Enhanced | всё то же + `peer_blacklist.txt` (Peer ID) | `qbittorrent/` |
+| Клиент | Платформа | Что собирается | Где лежит в `release` |
+|---|---|---|---|
+| [podkop](https://github.com/itdoginfo/podkop) | OpenWrt | `.lst`: домены и IPv4-подсети, по спискам и сводные по действию | `podkop/` |
+| [sing-box](https://sing-box.sagernet.org) | любая | rule-set `.json` (version 3) и `.srs` | `sing-box/` |
+| [Throne](https://github.com/throneproj/Throne) | Windows, Linux, macOS | удалённый маршрутный профиль `throne://route/…` | `throne/` |
+| [NekoBox](https://github.com/qr243vbi/nekobox) | Windows, Linux | строки `ruleset:` со ссылками на `.srs` | `nekobox/desktop-*` |
+| [NekoBox for Android](https://github.com/MatsuriDayo/NekoBoxForAndroid) | Android | строки доменов и IP для вставки | `nekobox/android-*` |
+| [Karing](https://github.com/KaringX/karing) | Android, iOS, Windows, macOS, Linux | ссылки на `.srs` (общие с sing-box) | `sing-box/` |
+| [Tixati](https://www.tixati.com) | Windows, Linux | IP-фильтр `label:CIDR` (IPv4 и IPv6), фильтр Peer ID | `tixati/` |
+| [qBittorrent](https://www.qbittorrent.org) | Windows, Linux, macOS | IP-фильтр `ipfilter.p2p`, скрипт обновления | `qbittorrent/` |
+| [qBittorrent Enhanced](https://github.com/c0re100/qBittorrent-Enhanced-Edition) | Windows, Linux, macOS | всё то же + `peer_blacklist.txt` (Peer ID) | `qbittorrent/` |
 
 Полный список файлов со ссылками — в `README.md` и `index.json` ветки `release`.
 
@@ -46,6 +49,40 @@ IPv6 в podkop не попадает: его списки подсетей пр�
 
 При каждом обновлении Throne перезаписывает правила удалённого профиля — личные правила держите в отдельном локальном профиле.
 Ссылки на GitHub Throne берёт через jsDelivr, поэтому изменения доходят с задержкой кэша.
+
+### NekoBox (ПК)
+
+Настройки маршрутизации → маршрут нужного исходящего (Block / Proxy) → вставить строки из:
+```
+https://raw.githubusercontent.com/Gesugao-san/rulesets/release/nekobox/desktop-block.txt
+```
+```
+https://raw.githubusercontent.com/Gesugao-san/rulesets/release/nekobox/desktop-proxy.txt
+```
+Каждая строка — `ruleset:<ссылка на .srs>`; NekoBox сам скачивает rule-set'ы, обновления приходят автоматически.
+
+### NekoBox for Android
+
+В NekoBox для Android нет удалённых rule-set'ов — только встроенные `geoip:`/`geosite:`. Правила вставляются текстом и **не** обновляются сами:
+Маршрут → новое правило → поле *domain*: строки из первого файла, поле *IP*: из второго, исходящий Block / Proxy.
+```
+https://raw.githubusercontent.com/Gesugao-san/rulesets/release/nekobox/android-proxy.domains.txt
+```
+```
+https://raw.githubusercontent.com/Gesugao-san/rulesets/release/nekobox/android-block.ips.txt
+```
+После изменений вставляйте заново. Большие списки (страны, континенты) здесь непрактичны.
+
+### Karing
+
+Правила отвода (Diversion) → **Add New Diversion Group** → вставить ссылку на `.srs` и сохранить → Custom Diversion Group → выбрать группу и задать действие.
+```
+https://raw.githubusercontent.com/Gesugao-san/rulesets/release/sing-box/p2p-spies.srs
+```
+```
+https://raw.githubusercontent.com/Gesugao-san/rulesets/release/sing-box/ru-extra.srs
+```
+На всех платформах одинаково. Документация Karing предупреждает, что `.srs` больше 3 МБ могут не влезть в память на Android и iOS — учитывайте это для стран и континентов.
 
 ### Tixati
 
@@ -88,6 +125,9 @@ Enhanced читает `peer_blacklist.txt` только при запуске: �
 Чтобы закрепить клиент на сборке или откатиться, используйте в ссылке `/<тег>/` вместо `/release/`.
 Профили Throne внутри тега всё равно берут `.srs` из ветки `release`.
 
+К каждому тегу также создаётся [GitHub Release](../../releases), где каждый файл приложен отдельно (папка становится префиксом:
+`podkop/all-block.subnets.lst` → `podkop.all-block.subnets.lst`). Хранятся 30 последних релизов; старые теги остаются.
+
 В ветке `release` есть свои `README.md` и `README.ru.md` с прямыми ссылками на каждый файл.
 
 ## Как править
@@ -96,6 +136,9 @@ Enhanced читает `peer_blacklist.txt` только при запуске: �
 2. Открыть PR — CI прогонит проверки и тесты, но ничего не опубликует.
 3. После слияния в `main` CI соберёт и запушит `release`.
 
+Виды записей: `domain`, `ip`, `peerid`, `asn`, `country`, `continent`. Список `example` в конце `rules.yml` показывает каждый;
+у него `enabled: false`, поэтому он проверяется при каждой сборке, но никогда не публикуется.
+
 Сборка падает, если в `rules.yml`:
 
 - частный/служебный диапазон или подсеть с ненулевыми битами хоста;
@@ -103,7 +146,10 @@ Enhanced читает `peer_blacklist.txt` только при запуске: �
 - запись в списке `block` без `evidence`;
 - Peer ID длиннее 8 символов (Enhanced сравнивает только первые 8) или с пробелом;
 - дубли или подсеть, вложенная в другую;
-- профиль Throne ссылается на несуществующий список.
+- профиль Throne ссылается на несуществующий или выключенный список;
+- частный/служебный номер AS, неизвестный код страны или континента;
+- запись `asn`/`country`/`continent` разворачивается в больше префиксов, чем её `max_prefixes`
+  (по умолчанию 16 / 20000 / 200000) — широкая блокировка всегда осознанный выбор.
 
 Локально:
 
@@ -113,6 +159,19 @@ python3 tools/build.py --out dist                      # без .srs
 python3 tools/build.py --out dist --sing-box sing-box  # с .srs
 python3 -m unittest tools/test_build.py -v
 ```
+
+## Источники данных
+
+Записи `asn`, `country` и `continent` разворачиваются при сборке; результат сохраняется в `release/resolved/`, так что любое изменение видно диффом.
+
+| Запись | Источник | Примечания |
+|---|---|---|
+| `asn` | [RIPEstat announced-prefixes](https://stat.ripe.net/docs/data-api/api-endpoints/announced-prefixes) (RIPE NCC) | Данные BGP с коллекторов RIS по всему миру, не только регион RIPE. Берутся только префиксы, анонсируемые на конец двухнедельного окна |
+| `country` | [RIPEstat country-resource-list](https://stat.ripe.net/docs/data-api/api-endpoints/country-resource-list) | Строится по статистике делегирования RIR: страна **регистрации**, а не место использования (это не геолокация) |
+| `continent` | [GeoNames](https://www.geonames.org/) countryInfo ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)), снимок в [`tools/data/continents.json`](tools/data/continents.json) | Страна → континент, дальше каждая страна как выше. GeoNames относит Россию к `EU`, Турцию к `AS` |
+
+Если RIPEstat недоступен, берётся предыдущий снимок из `release` с предупреждением; без снимка сборка падает, а не публикует пустой список.
+CI также пересобирает всё ежедневно: префиксы меняются без правок `rules.yml`.
 
 ## Чего здесь нет и почему
 

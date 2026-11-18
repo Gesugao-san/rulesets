@@ -9,8 +9,13 @@ Output (the --out directory, published by CI to the `release` branch):
   qbittorrent/  ipfilter.p2p, peer_blacklist.txt (Enhanced), update-ipfilter.ps1
   index.json, README.md
 
+  resolved/     <AS…|country-…|continent-…>.txt — prefixes behind asn/country/continent entries
+
 Usage:
-  python3 tools/build.py --rules rules.yml --out dist [--sing-box /path/to/sing-box]
+  python3 tools/build.py --rules rules.yml --out dist [--sing-box /path/to/sing-box] [--snapshot prev-release]
+
+asn/country/continent entries are expanded via RIPEstat (see tools/sources.py);
+--snapshot points to a checkout of the previous release, used if RIPEstat is down.
 
 Exit code 1 means rules.yml has errors (nothing is written).
 """
@@ -30,13 +35,21 @@ from pathlib import Path
 
 import yaml
 
+from sources import Resolver, SourceError, load_continents
+
 # Allowed list actions and what they become in Throne.
 THRONE_ACTION = {
   "block": {"action": "reject"},
   "proxy": {"action": "route", "outbound": "proxy"},
   "direct": {"action": "route", "outbound": "direct"},
 }
-ENTRY_KINDS = ("domain", "ip", "peerid")
+ENTRY_KINDS = ("domain", "ip", "peerid", "asn", "country", "continent")
+# Entries expanded into prefixes at build time, with the default max_prefixes guard.
+# The guard stops a too-broad entry (e.g. a hosting AS) from slipping in unnoticed.
+SOURCE_KINDS = {"asn": 16, "country": 20_000, "continent": 200_000}
+# ASNs that are never routed on the Internet: 0, AS_TRANS, documentation, private, last.
+RESERVED_ASN = [(0, 0), (23456, 23456), (64496, 65551), (4_200_000_000, 4_294_967_295)]
+CONTINENTS = load_continents()
 LIST_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 DOMAIN_LABEL_RE = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
 # Peer ID: printable ASCII without spaces; Enhanced compares only the first 8 chars.
@@ -61,14 +74,24 @@ class RuleList:
   domains: list[str] = field(default_factory=list)
   networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = field(default_factory=list)
   peerids: list[str] = field(default_factory=list)
+  enabled: bool = True
+  # (kind, value, max_prefixes) for asn/country/continent entries.
+  sources: list[tuple[str, object, int]] = field(default_factory=list)
+  resolved: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = field(default_factory=list)
+
+  @property
+  def all_networks(self) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+    """Explicit ip entries in their order, then resolved prefixes not already covered by them."""
+    extra = [n for n in self.resolved if not any(n.version == e.version and n.subnet_of(e) for e in self.networks)]
+    return self.networks + extra
 
   @property
   def ipv4(self) -> list[ipaddress.IPv4Network]:
-    return [n for n in self.networks if n.version == 4]
+    return [n for n in self.all_networks if n.version == 4]
 
   @property
   def ipv6(self) -> list[ipaddress.IPv6Network]:
-    return [n for n in self.networks if n.version == 6]
+    return [n for n in self.all_networks if n.version == 6]
 
 
 # ---------------------------------------------------------------- validation
@@ -112,6 +135,41 @@ def check_peerid(value: str, where: str) -> str:
   return peerid
 
 
+def check_asn(value, where: str) -> int:
+  """Validates an AS number: 'AS123' or 123, publicly routable."""
+  text = str(value).strip().upper().removeprefix("AS")
+  if not text.isdigit():
+    raise RulesError(f"{where}: '{value}' is not an AS number")
+  asn = int(text)
+  if any(lo <= asn <= hi for lo, hi in RESERVED_ASN):
+    raise RulesError(f"{where}: AS{asn} is private/reserved")
+  return asn
+
+
+def check_country(value, where: str) -> str:
+  """Validates an ISO 3166-1 alpha-2 country code known to GeoNames."""
+  cc = str(value).strip().upper()
+  if cc not in CONTINENTS["countries"]:
+    raise RulesError(f"{where}: '{value}' is not an ISO 3166-1 alpha-2 country code")
+  return cc
+
+
+def check_continent(value, where: str) -> str:
+  """Validates a GeoNames continent code."""
+  code = str(value).strip().upper()
+  if code not in CONTINENTS["continents"]:
+    raise RulesError(f"{where}: '{value}' is not a continent code ({', '.join(CONTINENTS['continents'])})")
+  return code
+
+
+def check_max_prefixes(entry: dict, kind: str, where: str) -> int:
+  """Reads the optional max_prefixes guard, falling back to the per-kind default."""
+  value = entry.get("max_prefixes", SOURCE_KINDS[kind])
+  if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+    raise RulesError(f"{where}: max_prefixes must be a positive integer")
+  return value
+
+
 def check_overlaps(rule_list: RuleList) -> None:
   """Rejects subnets nested in one another: almost always a typo."""
   for version in (4, 6):
@@ -136,7 +194,12 @@ def parse_entry(rule_list: RuleList, entry: dict, where: str) -> None:
     "domain": lambda: rule_list.domains.append(check_domain(entry["domain"], entry, where)),
     "ip": lambda: rule_list.networks.append(check_ip(entry["ip"], where)),
     "peerid": lambda: rule_list.peerids.append(check_peerid(entry["peerid"], where)),
+    "asn": lambda: rule_list.sources.append(("asn", check_asn(entry["asn"], where), check_max_prefixes(entry, "asn", where))),
+    "country": lambda: rule_list.sources.append(("country", check_country(entry["country"], where), check_max_prefixes(entry, "country", where))),
+    "continent": lambda: rule_list.sources.append(("continent", check_continent(entry["continent"], where), check_max_prefixes(entry, "continent", where))),
   }
+  if "max_prefixes" in entry and kind not in SOURCE_KINDS:
+    raise RulesError(f"{where}: max_prefixes applies only to {', '.join(SOURCE_KINDS)}")
   if kind == "peerid" and rule_list.action != "block":
     raise RulesError(f"{where}: peerid is allowed only in lists with action: block")
   parsers[kind]()
@@ -156,11 +219,15 @@ def parse_list(name: str, raw: dict) -> RuleList:
   if not entries:
     raise RulesError(f"{where}: the list is empty")
 
-  rule_list = RuleList(name=name, action=action, title=str(raw.get("title", name)))
+  enabled = raw.get("enabled", True)
+  if not isinstance(enabled, bool):
+    raise RulesError(f"{where}: enabled must be true or false")
+  rule_list = RuleList(name=name, action=action, title=str(raw.get("title", name)), enabled=enabled)
   for index, entry in enumerate(entries):
     parse_entry(rule_list, entry, f"{where}.entries[{index}]")
 
-  for label, values in (("domain", rule_list.domains), ("ip", rule_list.networks), ("peerid", rule_list.peerids)):
+  sources = [(kind, value) for kind, value, _ in rule_list.sources]
+  for label, values in (("domain", rule_list.domains), ("ip", rule_list.networks), ("peerid", rule_list.peerids), ("asn/country/continent", sources)):
     dupes = sorted({str(v) for v in values if values.count(v) > 1})
     if dupes:
       raise RulesError(f"{where}: duplicate {label}: {', '.join(dupes)}")
@@ -170,6 +237,9 @@ def parse_list(name: str, raw: dict) -> RuleList:
 
 def parse_profiles(raw: dict, lists: dict[str, RuleList]) -> dict[str, dict]:
   """Validates Throne profiles: existing lists and a known default outbound."""
+  unknown_kinds = sorted(set(raw or {}) - {"throne"})
+  if unknown_kinds:
+    raise RulesError(f"profiles: unknown profile kinds {', '.join(unknown_kinds)} (only throne)")
   profiles = (raw or {}).get("throne") or {}
   for name, profile in profiles.items():
     where = f"profiles.throne.{name}"
@@ -180,6 +250,9 @@ def parse_profiles(raw: dict, lists: dict[str, RuleList]) -> dict[str, dict]:
     unknown = [n for n in profile.get("lists", []) if n not in lists]
     if unknown:
       raise RulesError(f"{where}: unknown lists {', '.join(unknown)}")
+    disabled = [n for n in profile.get("lists", []) if not lists[n].enabled]
+    if disabled:
+      raise RulesError(f"{where}: disabled lists {', '.join(disabled)}")
     if not profile.get("lists"):
       raise RulesError(f"{where}: the profile is empty")
   return profiles
@@ -255,8 +328,8 @@ def singbox_source(rl: RuleList) -> dict | None:
   rules = []
   if rl.domains:
     rules.append({"domain_suffix": rl.domains})
-  if rl.networks:
-    rules.append({"ip_cidr": [str(n) for n in rl.networks]})
+  if rl.all_networks:
+    rules.append({"ip_cidr": [str(n) for n in rl.all_networks]})
   if not rules:
     return None
   return {"version": SINGBOX_RULESET_VERSION, "rules": rules}
@@ -319,6 +392,30 @@ def gen_throne(out: Path, meta: dict, lists: dict[str, RuleList], profiles: dict
   return files
 
 
+def gen_nekobox(out: Path, meta: dict, lists: dict[str, RuleList]) -> list[str]:
+  """NekoBox: desktop takes 'ruleset:<url>' lines; Android has no remote rule-sets, so plain lines to paste."""
+  files = []
+  for action in THRONE_ACTION:
+    group = [rl for rl in lists.values() if rl.action == action]
+    # Desktop (qr243vbi/nekobox): one 'ruleset:' line per list, pasted into the route of this action.
+    desktop = [f"ruleset:{raw_url(meta, f'sing-box/{rl.name}.srs')}" for rl in group if singbox_source(rl)]
+    # Android (NekoBoxForAndroid): 'domain:' = domain_suffix in its route editor; IPs as plain CIDR.
+    android = {
+      "domains": [f"domain:{d}" for rl in group for d in rl.domains],
+      "ips": [str(n) for rl in group for n in rl.all_networks],
+    }
+    if desktop:
+      write_lines(out / f"nekobox/desktop-{action}.txt", desktop)
+      files.append(f"nekobox/desktop-{action}.txt")
+    for kind, lines in android.items():
+      if not lines:
+        continue
+      rel = f"nekobox/android-{action}.{kind}.txt"
+      write_lines(out / rel, lines)
+      files.append(rel)
+  return files
+
+
 def gen_tixati(out: Path, lists: dict[str, RuleList], warnings: list[str]) -> list[str]:
   """Tixati: 'label:CIDR' (IPv4 and IPv6), an aggregated blocklist and a Peer ID filter."""
   files = []
@@ -328,7 +425,7 @@ def gen_tixati(out: Path, lists: dict[str, RuleList], warnings: list[str]) -> li
     if rl.action != "block":
       continue
     peerids.extend(p for p in rl.peerids if p not in peerids)
-    lines = [f"{rl.name}:{net}" for net in rl.networks]
+    lines = [f"{rl.name}:{net}" for net in rl.all_networks]
     if not lines:
       continue
     if len(lines) == 1:
@@ -361,7 +458,7 @@ def gen_qbittorrent(out: Path, lists: dict[str, RuleList]) -> list[str]:
   for rl in lists.values():
     if rl.action != "block":
       continue
-    lines.extend(f"{rl.name}:{ip_range(net)}" for net in rl.networks)
+    lines.extend(f"{rl.name}:{ip_range(net)}" for net in rl.all_networks)
     peerids.extend(p for p in rl.peerids if p not in peerids)
 
   if len(lines) > 1:
@@ -374,6 +471,7 @@ def gen_qbittorrent(out: Path, lists: dict[str, RuleList]) -> list[str]:
 
   script = REPO_ROOT / "clients/qbittorrent/update-ipfilter.ps1"
   if script.exists():
+    (out / "qbittorrent").mkdir(parents=True, exist_ok=True)
     shutil.copyfile(script, out / "qbittorrent/update-ipfilter.ps1")
     files.append("qbittorrent/update-ipfilter.ps1")
   return files
@@ -438,18 +536,51 @@ def gen_index(out: Path, meta: dict, files: list[str], warnings: list[str]) -> N
     write_lines(out / texts["file"], release_readme(meta, files, warnings, texts))
 
 
-def build(rules_path: Path, out: Path, sing_box: str | None) -> tuple[list[str], list[str]]:
-  """Full build: validation, output directory cleanup, all generators."""
-  meta, lists, profiles = load_rules(rules_path)
+def resolve_sources(lists: dict[str, RuleList], resolver: Resolver, warnings: list[str]) -> None:
+  """Expands asn/country/continent entries of enabled lists and enforces max_prefixes."""
+  for rl in lists.values():
+    for kind, value, limit in rl.sources:
+      key = resolver.key(kind, value)
+      try:
+        nets = resolver.resolve(kind, value)
+      except SourceError as exc:
+        raise RulesError(str(exc)) from None
+      if len(nets) > limit:
+        raise RulesError(f"lists.{rl.name}: {key} has {len(nets)} prefixes, over max_prefixes {limit}; raise it explicitly if this is intended")
+      if not nets:
+        warnings.append(f"{rl.name}: {key} resolved to no prefixes")
+      rl.resolved.extend(nets)
+  warnings.extend(resolver.warnings)
+
+
+def gen_resolved(out: Path, resolver: Resolver) -> list[str]:
+  """Snapshot of every expansion, so the next build can fall back on it."""
+  files = []
+  for kind_value, nets in sorted(resolver.cache.items()):
+    rel = f"resolved/{kind_value}.txt"
+    write_lines(out / rel, [str(n) for n in nets])
+    files.append(rel)
+  return files
+
+
+def build(rules_path: Path, out: Path, sing_box: str | None, resolver: Resolver | None = None) -> tuple[list[str], list[str]]:
+  """Full build: validation, expansion of asn/country/continent, cleanup, all generators."""
+  meta, all_lists, profiles = load_rules(rules_path)
+  # Disabled lists (e.g. the example) are validated but produce nothing.
+  lists = {name: rl for name, rl in all_lists.items() if rl.enabled}
+  warnings: list[str] = []
+  resolver = resolver or Resolver()
+  resolve_sources(lists, resolver, warnings)
+
   if out.exists():
     shutil.rmtree(out)
   out.mkdir(parents=True)
 
-  warnings: list[str] = []
-  files = []
+  files = gen_resolved(out, resolver)
   files += gen_podkop(out, lists, warnings)
   files += gen_singbox(out, lists, sing_box)
   files += gen_throne(out, meta, lists, profiles)
+  files += gen_nekobox(out, meta, lists)
   files += gen_tixati(out, lists, warnings)
   files += gen_qbittorrent(out, lists)
   if not sing_box:
@@ -463,10 +594,11 @@ def main() -> int:
   parser.add_argument("--rules", type=Path, default=REPO_ROOT / "rules.yml")
   parser.add_argument("--out", type=Path, default=REPO_ROOT / "dist")
   parser.add_argument("--sing-box", dest="sing_box", default=None, help="path to the sing-box binary for .srs")
+  parser.add_argument("--snapshot", type=Path, default=None, help="previous release checkout, used if RIPEstat is down")
   args = parser.parse_args()
 
   try:
-    files, warnings = build(args.rules, args.out, args.sing_box)
+    files, warnings = build(args.rules, args.out, args.sing_box, Resolver(snapshot_dir=args.snapshot))
   except RulesError as exc:
     print(f"ERROR: {exc}", file=sys.stderr)
     return 1

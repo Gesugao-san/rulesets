@@ -16,6 +16,10 @@ on:
       - tools/**
       - clients/**
   workflow_dispatch:
+  # Daily rebuild: asn/country/continent prefixes change without edits to rules.yml.
+  # No change → no commit and no tag.
+  schedule:
+    - cron: "43 2 * * *"
 
 permissions:
   contents: write
@@ -56,8 +60,17 @@ jobs:
           SING_BOX: /usr/local/bin/sing-box
         run: python -m unittest tools/test_build.py -v
 
+      - name: Previous release (fallback if RIPEstat is down)
+        run: |
+          if git ls-remote --exit-code --heads origin release >/dev/null; then
+            git fetch --depth 1 origin release
+            git worktree add --detach prev origin/release
+          else
+            mkdir prev
+          fi
+
       - name: Build
-        run: python tools/build.py --rules rules.yml --out dist --sing-box /usr/local/bin/sing-box
+        run: python tools/build.py --rules rules.yml --out dist --sing-box /usr/local/bin/sing-box --snapshot prev
 
       - name: Publish to release
         if: github.event_name != 'pull_request'
@@ -67,8 +80,7 @@ jobs:
 
           # The release branch is separate; if it does not exist yet, create an empty (orphan) one.
           if git ls-remote --exit-code --heads origin release >/dev/null; then
-            git fetch --depth 1 origin release
-            git worktree add rel origin/release
+            git worktree add --detach rel origin/release
             git -C rel checkout -B release
           else
             git worktree add --detach rel
@@ -93,3 +105,24 @@ jobs:
           git tag -a "${tag}" -m "Build of ${GITHUB_SHA::7} (run ${GITHUB_RUN_ID})"
           # Atomic: either both the branch and the tag land, or neither does.
           git push --atomic origin release "refs/tags/${tag}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+        id: publish
+
+      - name: GitHub Release with files
+        if: steps.publish.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.publish.outputs.tag }}
+          # Older releases are deleted, their tags stay (pinning by tag keeps working).
+          KEEP_RELEASES: 30
+        run: |
+          # Release assets are a flat list: podkop/all-block.subnets.lst → podkop.all-block.subnets.lst.
+          mkdir assets
+          (cd dist && find . -type f | sed 's|^\./||') | while read -r f; do
+            cp "dist/${f}" "assets/${f//\//.}"
+          done
+          gh release create "${TAG}" assets/* --title "${TAG}" --notes-file dist/README.md --latest
+
+          gh release list --limit 1000 --json tagName,createdAt --jq 'sort_by(.createdAt) | reverse | .[].tagName' \
+            | tail -n +$((KEEP_RELEASES + 1)) \
+            | while read -r old; do gh release delete "${old}" --yes; done

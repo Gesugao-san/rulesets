@@ -27,6 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import build  # noqa: E402
+from sources import Resolver  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 # Line forms from the Tixati docs (only the ones we generate).
@@ -70,6 +71,30 @@ def decode_throne(link: str) -> dict:
   payload = link.strip().removeprefix("throne://route/")
   payload += "=" * (-len(payload) % 4)
   return json.loads(base64.urlsafe_b64decode(payload))
+
+
+END = "2026-11-17T16:00:00"
+
+
+def fake_fetch(endpoint: str, params: dict) -> dict:
+  """Stand-in for RIPEstat: fixed answers, no network, so tests are reproducible."""
+  resource = params["resource"]
+  if endpoint == "announced-prefixes":
+    prefixes = {
+      "AS216158": [("31.200.249.0/24", END)],
+      # One live prefix, one withdrawn before the end of the window.
+      "AS3333": [("8.8.4.0/24", END), ("8.8.8.0/24", "2026-11-05T00:00:00")],
+      "AS15169": [(f"8.{i}.0.0/16", END) for i in range(0, 40, 2)],
+    }.get(resource, [])
+    return {"query_endtime": END, "prefixes": [{"prefix": p, "timelines": [{"starttime": "x", "endtime": e}]} for p, e in prefixes]}
+  if endpoint == "country-resource-list":
+    blocks = {"AQ": ["1.0.0.0/24"], "BV": ["1.0.1.0/24", "2001:4860::/32"]}.get(resource, [])
+    return {"resources": {"ipv4": [b for b in blocks if ":" not in b], "ipv6": [b for b in blocks if ":" in b], "asn": []}}
+  raise AssertionError(endpoint)
+
+
+def failing_fetch(endpoint: str, params: dict) -> dict:
+  raise OSError("network down")
 
 
 def write_rules(tmp: Path, body: str) -> Path:
@@ -178,6 +203,70 @@ class ValidationTests(unittest.TestCase):
             - domain: Example.com
     """, "duplicate")
 
+  def test_reserved_asn(self):
+    self.assert_rejected("""
+      lists:
+        x:
+          action: proxy
+          entries:
+            - asn: 65000
+    """, "private/reserved")
+
+  def test_bad_country(self):
+    self.assert_rejected("""
+      lists:
+        x:
+          action: proxy
+          entries:
+            - country: XX
+    """, "country code")
+
+  def test_bad_continent(self):
+    self.assert_rejected("""
+      lists:
+        x:
+          action: proxy
+          entries:
+            - continent: ZZ
+    """, "continent code")
+
+  def test_max_prefixes_only_for_sources(self):
+    self.assert_rejected("""
+      lists:
+        x:
+          action: proxy
+          entries:
+            - ip: 8.8.8.0/24
+              max_prefixes: 3
+    """, "applies only")
+
+  def test_profile_with_disabled_list(self):
+    self.assert_rejected("""
+      lists:
+        x:
+          action: proxy
+          enabled: false
+          entries:
+            - domain: example.com
+      profiles:
+        throne:
+          p:
+            lists: [x]
+    """, "disabled lists")
+
+  def test_unknown_profile_kind(self):
+    self.assert_rejected("""
+      lists:
+        x:
+          action: proxy
+          entries:
+            - domain: example.com
+      profiles:
+        clash:
+          p:
+            lists: [x]
+    """, "unknown profile kinds")
+
   def test_unknown_profile_list(self):
     self.assert_rejected("""
       lists:
@@ -192,6 +281,80 @@ class ValidationTests(unittest.TestCase):
     """, "unknown lists")
 
 
+class SourceTests(unittest.TestCase):
+  """Expansion of asn/country/continent entries, guards and snapshot fallback."""
+
+  def build_with(self, body: str, fetch=fake_fetch, snapshot: Path | None = None):
+    tmp = Path(self.tmp.name)
+    rules = write_rules(tmp, body)
+    return build.build(rules, tmp / "dist", None, Resolver(fetch=fetch, snapshot_dir=snapshot))
+
+  def setUp(self):
+    self.tmp = tempfile.TemporaryDirectory()
+
+  def tearDown(self):
+    self.tmp.cleanup()
+
+  def test_asn_only_live_prefixes(self):
+    self.build_with("""
+      lists:
+        x:
+          action: proxy
+          entries:
+            - asn: AS3333
+    """)
+    self.assertEqual((Path(self.tmp.name) / "dist/resolved/AS3333.txt").read_text().split(), ["8.8.4.0/24"])
+
+  def test_max_prefixes_guard(self):
+    with self.assertRaises(build.RulesError) as ctx:
+      self.build_with("""
+        lists:
+          x:
+            action: proxy
+            entries:
+              - asn: 15169
+      """)
+    self.assertIn("over max_prefixes", str(ctx.exception))
+
+  def test_continent_expands_countries(self):
+    files, _ = self.build_with("""
+      lists:
+        x:
+          action: proxy
+          entries:
+            - continent: AN
+    """)
+    self.assertIn("resolved/continent-AN.txt", files)
+    self.assertIn("resolved/country-AQ.txt", files)
+    nets = (Path(self.tmp.name) / "dist/resolved/continent-AN.txt").read_text().split()
+    # 1.0.0.0/24 + 1.0.1.0/24 collapse into one /23; IPv6 kept.
+    self.assertEqual(nets, ["1.0.0.0/23", "2001:4860::/32"])
+
+  def test_snapshot_fallback(self):
+    snap = Path(self.tmp.name) / "prev"
+    (snap / "resolved").mkdir(parents=True)
+    (snap / "resolved/AS216158.txt").write_text("31.200.249.0/24\n")
+    _, warnings = self.build_with("""
+      lists:
+        x:
+          action: proxy
+          entries:
+            - asn: 216158
+    """, fetch=failing_fetch, snapshot=snap)
+    self.assertTrue(any("previous snapshot" in w for w in warnings))
+
+  def test_no_snapshot_fails(self):
+    with self.assertRaises(build.RulesError) as ctx:
+      self.build_with("""
+        lists:
+          x:
+            action: proxy
+            entries:
+              - asn: 216158
+      """, fetch=failing_fetch)
+    self.assertIn("no previous snapshot", str(ctx.exception))
+
+
 class OutputTests(unittest.TestCase):
   """Builds the real rules.yml and checks every format."""
 
@@ -200,8 +363,10 @@ class OutputTests(unittest.TestCase):
     cls.tmp = tempfile.TemporaryDirectory()
     cls.out = Path(cls.tmp.name) / "dist"
     cls.sing_box = os.environ.get("SING_BOX")
-    cls.files, cls.warnings = build.build(REPO_ROOT / "rules.yml", cls.out, cls.sing_box)
-    cls.meta, cls.lists, cls.profiles = build.load_rules(REPO_ROOT / "rules.yml")
+    cls.files, cls.warnings = build.build(REPO_ROOT / "rules.yml", cls.out, cls.sing_box, Resolver(fetch=fake_fetch))
+    cls.meta, all_lists, cls.profiles = build.load_rules(REPO_ROOT / "rules.yml")
+    cls.lists = {name: rl for name, rl in all_lists.items() if rl.enabled}
+    build.resolve_sources(cls.lists, Resolver(fetch=fake_fetch), [])
 
   @classmethod
   def tearDownClass(cls):
@@ -224,13 +389,13 @@ class OutputTests(unittest.TestCase):
         self.assertRegex(line, r"^[a-z0-9.-]+$", rel)
 
   def test_qbittorrent_p2p_parses(self):
-    expected = sum(len(rl.networks) for rl in self.lists.values() if rl.action == "block")
+    expected = sum(len(rl.all_networks) for rl in self.lists.values() if rl.action == "block")
     parsed = [qbt_parse_p2p_line(line) for line in self.read("qbittorrent/ipfilter.p2p")]
     self.assertNotIn(None, parsed, "qBittorrent would treat a line as malformed")
     self.assertEqual(len([p for p in parsed if p != "skip"]), expected)
 
   def test_qbittorrent_ranges_match_cidr(self):
-    nets = [n for rl in self.lists.values() if rl.action == "block" for n in rl.networks]
+    nets = [n for rl in self.lists.values() if rl.action == "block" for n in rl.all_networks]
     ranges = [qbt_parse_p2p_line(line) for line in self.read("qbittorrent/ipfilter.p2p")]
     ranges = [r for r in ranges if r != "skip"]
     for net, (start, end) in zip(nets, ranges):
@@ -296,6 +461,23 @@ class OutputTests(unittest.TestCase):
     links = lambda lines: [line for line in lines if line.startswith("- [`")]
     self.assertEqual(links(en), links(ru))
     self.assertEqual(len(links(en)), len(self.files))
+
+  def test_example_list_ignored(self):
+    _, all_lists, _ = build.load_rules(REPO_ROOT / "rules.yml")
+    self.assertIn("example", all_lists, "the example list must stay in rules.yml and stay valid")
+    self.assertFalse(all_lists["example"].enabled)
+    self.assertFalse(any("example" in f for f in self.files))
+
+  def test_nekobox(self):
+    for rel in (f for f in self.files if f.startswith("nekobox/desktop-")):
+      for line in self.read(rel):
+        self.assertTrue(line.startswith("ruleset:https://") and line.endswith(".srs"), line)
+    for rel in (f for f in self.files if f.startswith("nekobox/android-") and f.endswith(".ips.txt")):
+      for line in self.read(rel):
+        ipaddress.ip_network(line, strict=True)
+    for rel in (f for f in self.files if f.startswith("nekobox/android-") and f.endswith(".domains.txt")):
+      for line in self.read(rel):
+        self.assertRegex(line, r"^domain:[a-z0-9.-]+$")
 
   def test_index_lists_everything(self):
     index = json.loads((self.out / "index.json").read_text(encoding="utf-8"))
