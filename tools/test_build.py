@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""rulesets builder tests: rules.yml validation and format compatibility with clients.
+"""rulesets builder tests: rules.yaml validation and format compatibility with clients.
 
 The client parsers here mirror the clients' own source code, so a format
 change on our side cannot slip through unnoticed:
@@ -24,6 +24,8 @@ import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+
+import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import build  # noqa: E402
@@ -98,14 +100,14 @@ def failing_fetch(endpoint: str, params: dict) -> dict:
 
 
 def write_rules(tmp: Path, body: str) -> Path:
-  """Writes a temporary rules.yml with a minimal header."""
-  path = tmp / "rules.yml"
+  """Writes a temporary rules.yaml with a minimal header."""
+  path = tmp / "rules.yaml"
   path.write_text("meta:\n  repo: owner/repo\n" + textwrap.dedent(body), encoding="utf-8")
   return path
 
 
 class ValidationTests(unittest.TestCase):
-  """Errors in rules.yml must be caught before publishing."""
+  """Errors in rules.yaml must be caught before publishing."""
 
   def assert_rejected(self, body: str, fragment: str) -> None:
     with tempfile.TemporaryDirectory() as tmp:
@@ -202,6 +204,23 @@ class ValidationTests(unittest.TestCase):
             - domain: example.com
             - domain: Example.com
     """, "duplicate")
+
+  def test_yaml12_scalars(self):
+    # YAML 1.1 would turn NO/ON into booleans and 0123 into octal 83.
+    data = yaml.load("a: NO\nb: on\nc: 0123\nd: false\ne: True\nf: -5", Loader=build.Yaml12Loader)
+    self.assertEqual(data, {"a": "NO", "b": "on", "c": 123, "d": False, "e": True, "f": -5})
+
+  def test_country_norway(self):
+    with tempfile.TemporaryDirectory() as tmp:
+      path = write_rules(Path(tmp), """
+        lists:
+          x:
+            action: proxy
+            entries:
+              - country: NO
+      """)
+      _, lists, _ = build.load_rules(path)
+      self.assertEqual(lists["x"].sources, [("country", "NO", build.SOURCE_KINDS["country"])])
 
   def test_reserved_asn(self):
     self.assert_rejected("""
@@ -356,15 +375,15 @@ class SourceTests(unittest.TestCase):
 
 
 class OutputTests(unittest.TestCase):
-  """Builds the real rules.yml and checks every format."""
+  """Builds the real rules.yaml and checks every format."""
 
   @classmethod
   def setUpClass(cls):
     cls.tmp = tempfile.TemporaryDirectory()
     cls.out = Path(cls.tmp.name) / "dist"
     cls.sing_box = os.environ.get("SING_BOX")
-    cls.files, cls.warnings = build.build(REPO_ROOT / "rules.yml", cls.out, cls.sing_box, Resolver(fetch=fake_fetch))
-    cls.meta, all_lists, cls.profiles = build.load_rules(REPO_ROOT / "rules.yml")
+    cls.files, cls.warnings = build.build(REPO_ROOT / "rules.yaml", cls.out, cls.sing_box, Resolver(fetch=fake_fetch))
+    cls.meta, all_lists, cls.profiles = build.load_rules(REPO_ROOT / "rules.yaml")
     cls.lists = {name: rl for name, rl in all_lists.items() if rl.enabled}
     build.resolve_sources(cls.lists, Resolver(fetch=fake_fetch), [])
 
@@ -465,8 +484,8 @@ class OutputTests(unittest.TestCase):
     self.assertEqual(len(links(en)), len(self.files))
 
   def test_example_list_ignored(self):
-    _, all_lists, _ = build.load_rules(REPO_ROOT / "rules.yml")
-    self.assertIn("example", all_lists, "the example list must stay in rules.yml and stay valid")
+    _, all_lists, _ = build.load_rules(REPO_ROOT / "rules.yaml")
+    self.assertIn("example", all_lists, "the example list must stay in rules.yaml and stay valid")
     self.assertFalse(all_lists["example"].enabled)
     self.assertFalse(any("example" in f for f in self.files))
 

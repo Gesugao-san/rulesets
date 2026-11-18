@@ -1,23 +1,23 @@
-# Build and publish: rules.yml → release branch.
-# Any change to rules.yml in main rebuilds every format; never edit the release branch by hand.
+# Build and publish: rules.yaml → release branch.
+# Any change to rules.yaml in main rebuilds every format; never edit the release branch by hand.
 name: build
 
 on:
   push:
     branches: [main]
     paths:
-      - rules.yml
+      - rules.yaml
       - tools/**
       - clients/**
       - .github/workflows/build.yml
   pull_request:
     paths:
-      - rules.yml
+      - rules.yaml
       - tools/**
       - clients/**
       - .github/workflows/build.yml
   workflow_dispatch:
-  # Daily rebuild: asn/country/continent prefixes change without edits to rules.yml.
+  # Daily rebuild: asn/country/continent prefixes change without edits to rules.yaml.
   # No change → no commit and no tag.
   schedule:
     - cron: "0 0 * * *"
@@ -71,7 +71,7 @@ jobs:
           fi
 
       - name: Build
-        run: python tools/build.py --rules rules.yml --out dist --sing-box /usr/local/bin/sing-box --snapshot prev
+        run: python tools/build.py --rules rules.yaml --out dist --sing-box /usr/local/bin/sing-box --snapshot prev
 
       - name: Publish to release
         if: github.event_name != 'pull_request'
@@ -89,7 +89,7 @@ jobs:
             git -C rel rm -rf --quiet . || true
           fi
 
-          # Full content replacement: lists removed from rules.yml disappear from release too.
+          # Full content replacement: lists removed from rules.yaml disappear from release too.
           find rel -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           cp -a dist/. rel/
 

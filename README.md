@@ -2,7 +2,7 @@
 
 **English** | [Русский](README.ru.md)
 
-Filtering and routing rules kept in one place: all lists live in [`rules.yml`](rules.yml),
+Filtering and routing rules kept in one place: all lists live in [`rules.yaml`](rules.yaml),
 and CI builds every client format from it into the [`release`](../../tree/release) branch.
 
 | Client | Platform | What is built | Where in `release` |
@@ -132,14 +132,14 @@ The `release` branch has its own `README.md` and `README.ru.md` with direct link
 
 ## Editing
 
-1. Edit `rules.yml` (the GitHub web editor is fine).
+1. Edit `rules.yaml` (the GitHub web editor is fine).
 2. Open a PR — CI runs validation and tests but publishes nothing.
 3. After merging into `main`, CI builds and pushes `release`.
 
-Entry kinds: `domain`, `ip`, `peerid`, `asn`, `country`, `continent`. The `example` list at the end of `rules.yml` shows each of them;
+Entry kinds: `domain`, `ip`, `peerid`, `asn`, `country`, `continent`. The `example` list at the end of `rules.yaml` shows each of them;
 it has `enabled: false`, so it is validated on every build but never published.
 
-The build fails if `rules.yml` contains:
+The build fails if `rules.yaml` contains:
 
 - a private/reserved range or a subnet with host bits set;
 - a domain deeper than the second level without `sld_exception: <reason>`;
@@ -171,7 +171,7 @@ python3 -m unittest tools/test_build.py -v
 | `continent` | [GeoNames](https://www.geonames.org/) countryInfo ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)), snapshot in [`tools/data/continents.json`](tools/data/continents.json) | Country → continent, then each country as above. GeoNames puts Russia in `EU` and Turkey in `AS` |
 
 If RIPEstat is unreachable, the previous snapshot from `release` is reused with a warning; with no snapshot the build fails rather than publish an empty list.
-CI also rebuilds daily, because prefixes change without edits to `rules.yml`.
+CI also rebuilds daily, because prefixes change without edits to `rules.yaml`.
 
 ## What is not here and why
 

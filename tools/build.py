@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""rulesets builder: turns the single rules.yml into files for every client.
+"""rulesets builder: turns the single rules.yaml into files for every client.
 
 Output (the --out directory, published by CI to the `release` branch):
   podkop/       <list>.domains.lst, <list>.subnets.lst, all-<action>.*.lst
@@ -12,12 +12,12 @@ Output (the --out directory, published by CI to the `release` branch):
   resolved/     <AS…|country-…|continent-…>.txt — prefixes behind asn/country/continent entries
 
 Usage:
-  python3 tools/build.py --rules rules.yml --out dist [--sing-box /path/to/sing-box] [--snapshot prev-release]
+  python3 tools/build.py --rules rules.yaml --out dist [--sing-box /path/to/sing-box] [--snapshot prev-release]
 
 asn/country/continent entries are expanded via RIPEstat (see tools/sources.py);
 --snapshot points to a checkout of the previous release, used if RIPEstat is down.
 
-Exit code 1 means rules.yml has errors (nothing is written).
+Exit code 1 means rules.yaml has errors (nothing is written).
 """
 
 from __future__ import annotations
@@ -60,13 +60,28 @@ SINGBOX_RULESET_VERSION = 3
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
+class Yaml12Loader(yaml.SafeLoader):
+  """SafeLoader with YAML 1.2 scalars: PyYAML follows YAML 1.1, where `NO`, `on`, `yes`
+  become booleans (country: NO → False) and `0123` is octal (asn: 0123 → 83).
+  Here only true/false are booleans and integers are always decimal."""
+
+
+Yaml12Loader.yaml_implicit_resolvers = {
+  first: [(tag, rx) for tag, rx in resolvers if tag not in ("tag:yaml.org,2002:bool", "tag:yaml.org,2002:int")]
+  for first, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+}
+Yaml12Loader.add_implicit_resolver("tag:yaml.org,2002:bool", re.compile(r"^(?:true|True|TRUE|false|False|FALSE)$"), list("tTfF"))
+Yaml12Loader.add_implicit_resolver("tag:yaml.org,2002:int", re.compile(r"^[-+]?[0-9]+$"), list("-+0123456789"))
+Yaml12Loader.add_constructor("tag:yaml.org,2002:int", lambda loader, node: int(loader.construct_scalar(node), 10))
+
+
 class RulesError(Exception):
-  """An error in rules.yml: the build stops and nothing is published."""
+  """An error in rules.yaml: the build stops and nothing is published."""
 
 
 @dataclass
 class RuleList:
-  """A single validated list from rules.yml."""
+  """A single validated list from rules.yaml."""
 
   name: str
   action: str
@@ -259,9 +274,9 @@ def parse_profiles(raw: dict, lists: dict[str, RuleList]) -> dict[str, dict]:
 
 
 def load_rules(path: Path) -> tuple[dict, dict[str, RuleList], dict[str, dict]]:
-  """Reads and validates the whole rules.yml."""
+  """Reads and validates the whole rules.yaml."""
   try:
-    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    raw = yaml.load(path.read_text(encoding="utf-8"), Loader=Yaml12Loader)
   except yaml.YAMLError as exc:
     raise RulesError(f"{path}: YAML could not be parsed: {exc}") from None
   if not isinstance(raw, dict):
@@ -482,7 +497,7 @@ RELEASE_README = {
   "en": {
     "file": "README.md",
     "switch": "**English** | [Русский](README.ru.md)",
-    "intro": "Generated from `rules.yml` in [{repo}](https://github.com/{repo}). This branch is generated automatically; manual changes here are replaced by the next build.",
+    "intro": "Generated from `rules.yaml` in [{repo}](https://github.com/{repo}). This branch is generated automatically; manual changes here are replaced by the next build.",
     "pin": (
       "Every build is also tagged `build-YYYY-MM-DD-N` (N is the CI run number). To pin a client to a build, replace "
       "`/{branch}/` in a link with `/<tag>/`. Throne profiles inside a tag still load `.srs` "
@@ -493,7 +508,7 @@ RELEASE_README = {
   "ru": {
     "file": "README.ru.md",
     "switch": "[English](README.md) | **Русский**",
-    "intro": "Собрано из `rules.yml` в [{repo}](https://github.com/{repo}). Ветка генерируется автоматически; ручные правки здесь заменит следующая сборка.",
+    "intro": "Собрано из `rules.yaml` в [{repo}](https://github.com/{repo}). Ветка генерируется автоматически; ручные правки здесь заменит следующая сборка.",
     "pin": (
       "Каждая сборка также помечена тегом `build-YYYY-MM-DD-N` (N — номер прогона CI). Чтобы закрепить клиент на сборке, "
       "замените в ссылке `/{branch}/` на `/<тег>/`. Профили Throne внутри тега всё равно берут `.srs` "
@@ -591,7 +606,7 @@ def build(rules_path: Path, out: Path, sing_box: str | None, resolver: Resolver 
 
 def main() -> int:
   parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-  parser.add_argument("--rules", type=Path, default=REPO_ROOT / "rules.yml")
+  parser.add_argument("--rules", type=Path, default=REPO_ROOT / "rules.yaml")
   parser.add_argument("--out", type=Path, default=REPO_ROOT / "dist")
   parser.add_argument("--sing-box", dest="sing_box", default=None, help="path to the sing-box binary for .srs")
   parser.add_argument("--snapshot", type=Path, default=None, help="previous release checkout, used if RIPEstat is down")
