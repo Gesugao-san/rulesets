@@ -20,7 +20,7 @@ on:
   # Daily rebuild: asn/country/continent prefixes change without edits to rules.yml.
   # No change → no commit and no tag.
   schedule:
-    - cron: "43 2 * * *"
+    - cron: "0 0 * * *"
 
 permissions:
   contents: write
