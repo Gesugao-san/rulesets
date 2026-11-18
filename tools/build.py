@@ -482,7 +482,7 @@ RELEASE_README = {
   "en": {
     "file": "README.md",
     "switch": "**English** | [Русский](README.ru.md)",
-    "intro": "Generated from `rules.yml` in [{repo}](https://github.com/{repo}). Do not edit this branch.",
+    "intro": "Generated from `rules.yml` in [{repo}](https://github.com/{repo}). This branch is generated automatically; manual changes here are replaced by the next build.",
     "pin": (
       "Every build is also tagged `build-YYYY-MM-DD-N` (N is the CI run number). To pin a client to a build, replace "
       "`/{branch}/` in a link with `/<tag>/`. Throne profiles inside a tag still load `.srs` "
@@ -493,7 +493,7 @@ RELEASE_README = {
   "ru": {
     "file": "README.ru.md",
     "switch": "[English](README.md) | **Русский**",
-    "intro": "Собрано из `rules.yml` в [{repo}](https://github.com/{repo}). Эту ветку не править.",
+    "intro": "Собрано из `rules.yml` в [{repo}](https://github.com/{repo}). Ветка генерируется автоматически; ручные правки здесь заменит следующая сборка.",
     "pin": (
       "Каждая сборка также помечена тегом `build-YYYY-MM-DD-N` (N — номер прогона CI). Чтобы закрепить клиент на сборке, "
       "замените в ссылке `/{branch}/` на `/<тег>/`. Профили Throne внутри тега всё равно берут `.srs` "

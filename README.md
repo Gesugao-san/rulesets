@@ -2,8 +2,8 @@
 
 **English** | [Русский](README.ru.md)
 
-A single source of filtering and routing rules. Edit **only** [`rules.yml`](rules.yml);
-everything else is built by CI and published to the [`release`](../../tree/release) branch.
+Filtering and routing rules kept in one place: all lists live in [`rules.yml`](rules.yml),
+and CI builds every client format from it into the [`release`](../../tree/release) branch.
 
 | Client | Platform | What is built | Where in `release` |
 |---|---|---|---|
