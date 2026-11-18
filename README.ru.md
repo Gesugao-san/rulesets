@@ -5,17 +5,19 @@
 Правила фильтрации и маршрутизации в одном месте: все списки живут в [`rules.yaml`](rules.yaml),
 а CI собирает из него форматы для каждого клиента в ветку [`release`](../../tree/release).
 
-| Клиент | Платформа | Что собирается | Где лежит в `release` |
+| Формат | Содержимое | Клиенты | Где лежит в `release` |
 |---|---|---|---|
-| [podkop](https://github.com/itdoginfo/podkop) | OpenWrt | `.lst`: домены и IPv4-подсети, по спискам и сводные по действию | `podkop/` |
-| [sing-box](https://sing-box.sagernet.org) | любая | rule-set `.json` (version 3) и `.srs` | `sing-box/` |
-| [Throne](https://github.com/throneproj/Throne) | Windows, Linux, macOS | удалённый маршрутный профиль `throne://route/…` | `throne/` |
-| [NekoBox](https://github.com/qr243vbi/nekobox) | Windows, Linux | строки `ruleset:` со ссылками на `.srs` | `nekobox/desktop-*` |
-| [NekoBox for Android](https://github.com/MatsuriDayo/NekoBoxForAndroid) | Android | строки доменов и IP для вставки | `nekobox/android-*` |
-| [Karing](https://github.com/KaringX/karing) | Android, iOS, Windows, macOS, Linux | ссылки на `.srs` (общие с sing-box) | `sing-box/` |
-| [Tixati](https://www.tixati.com) | Windows, Linux | IP-фильтр `label:CIDR` (IPv4 и IPv6), фильтр Peer ID | `tixati/` |
-| [qBittorrent](https://www.qbittorrent.org) | Windows, Linux, macOS | IP-фильтр `ipfilter.p2p`, скрипт обновления | `qbittorrent/` |
-| [qBittorrent Enhanced](https://github.com/c0re100/qBittorrent-Enhanced-Edition) | Windows, Linux, macOS | всё то же + `peer_blacklist.txt` (Peer ID) | `qbittorrent/` |
+| `.srs`, `.json` | rule-set sing-box (version 3): домены и IP-подсети | [sing-box](https://sing-box.sagernet.org) — любая платформа<br>[Karing](https://github.com/KaringX/karing) — Android, iOS, Windows, macOS, Linux<br>[Throne](https://github.com/throneproj/Throne) и [NekoBox](https://github.com/qr243vbi/nekobox) берут его по ссылке | `sing-box/` |
+| `throne://route/…` | удалённый маршрутный профиль со ссылками на `.srs` | [Throne](https://github.com/throneproj/Throne) — Windows, Linux, macOS | `throne/` |
+| строки `ruleset:<ссылка>` | ссылки на `.srs`, по строке на список | [NekoBox](https://github.com/qr243vbi/nekobox) — Windows, Linux | `nekobox/desktop-*` |
+| строки `domain:` и CIDR | домены и IP-подсети для ручной вставки | [NekoBox for Android](https://github.com/MatsuriDayo/NekoBoxForAndroid) — Android | `nekobox/android-*` |
+| `.lst` | домены и IPv4-подсети по одной в строке, по спискам и сводные по действию | [podkop](https://github.com/itdoginfo/podkop) — OpenWrt | `podkop/` |
+| `label:CIDR` | IP-фильтр, IPv4 и IPv6 | [Tixati](https://www.tixati.com) — Windows, Linux | `tixati/*.txt` |
+| `.p2p` (`label:начало-конец`) | IP-фильтр, IPv4 и IPv6 | [qBittorrent](https://www.qbittorrent.org), [qBittorrent Enhanced](https://github.com/c0re100/qBittorrent-Enhanced-Edition) — Windows, Linux, macOS | `qbittorrent/ipfilter.p2p` |
+| Peer ID `-XX0001-*` | строки фильтра Peer ID | [Tixati](https://www.tixati.com) | `tixati/peerid-filter.txt` |
+| Peer ID regex | строки `^-XX0001- .*` | [qBittorrent Enhanced](https://github.com/c0re100/qBittorrent-Enhanced-Edition) | `qbittorrent/peer_blacklist.txt` |
+| `.ps1` | скрипт обновления IP-фильтра и списка Peer ID | [qBittorrent](https://www.qbittorrent.org), [qBittorrent Enhanced](https://github.com/c0re100/qBittorrent-Enhanced-Edition) — Windows | `qbittorrent/update-ipfilter.ps1` |
+| `.txt`, `.csv` | развёрнутые префиксы `asn`/`country`/`continent`; отчёт об исходных AS | для проверки, не для клиентов | `resolved/`, `review.csv` |
 
 Полный список файлов со ссылками — в `README.md` и `index.json` ветки `release`.
 
