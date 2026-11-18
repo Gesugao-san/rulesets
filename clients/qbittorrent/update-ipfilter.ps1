@@ -23,7 +23,7 @@
   qBittorrent data folder. Defaults to %LOCALAPPDATA%\qBittorrent.
 
 .PARAMETER FilterPath
-  Where to store ipfilter.p2p. Defaults to <DataDir>\gesu-ipfilter.p2p.
+  Where to store ipfilter.p2p. Defaults to <DataDir>\rulesets-ipfilter.p2p.
 
 .PARAMETER SkipPeerBlacklist
   Do not download peer_blacklist.txt (plain qBittorrent).
@@ -103,7 +103,7 @@ function Update-LocalFile {
 
 try {
   if (-not (Test-Path $DataDir)) { throw "qBittorrent data folder not found: $DataDir (use -DataDir)" }
-  if (-not $FilterPath) { $FilterPath = Join-Path $DataDir 'gesu-ipfilter.p2p' }
+  if (-not $FilterPath) { $FilterPath = Join-Path $DataDir 'rulesets-ipfilter.p2p' }
 
   $ipFilterChanged = Update-LocalFile -Url "$BaseUrl/ipfilter.p2p" -Destination $FilterPath
 

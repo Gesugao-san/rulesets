@@ -16,6 +16,80 @@ everything else is built by CI and published to the [`release`](../../tree/relea
 
 The full list of files with links is in `README.md` and `index.json` on the `release` branch.
 
+## Quick start
+
+Copy a link, paste it into the client. All links point to the `release` branch and always serve the latest build.
+
+### podkop (OpenWrt)
+
+LuCI → **Services → Podkop**. Lists update on podkop's own schedule.
+
+1. Add a section with connection type **Block** → *Remote subnet lists*:
+   ```
+   https://raw.githubusercontent.com/Gesugao-san/rulesets/release/podkop/all-block.subnets.lst
+   ```
+2. In your **Proxy** section → *Remote domain lists*:
+   ```
+   https://raw.githubusercontent.com/Gesugao-san/rulesets/release/podkop/all-proxy.domains.lst
+   ```
+3. Save & Apply.
+
+IPv6 is not exported to podkop: its subnet lists accept IPv4 only.
+
+### Throne
+
+1. Routing settings → add a **remote** route profile, URL:
+   ```
+   https://raw.githubusercontent.com/Gesugao-san/rulesets/release/throne/selective.txt
+   ```
+2. Enable auto-update and select the profile.
+
+On every update Throne overwrites the rules of a remote profile — keep personal rules in a separate local profile.
+Throne fetches GitHub links through jsDelivr, so changes arrive with a cache delay.
+
+### Tixati
+
+1. **IP Filter** (castle wall icon on the toolbar) → **Add** → source URL, then set an auto-reload interval:
+   ```
+   https://raw.githubusercontent.com/Gesugao-san/rulesets/release/tixati/all-block.txt
+   ```
+2. **Settings → Peers → Client Filter → Peer ID** → "never allow": add each line of
+   ```
+   https://raw.githubusercontent.com/Gesugao-san/rulesets/release/tixati/peerid-filter.txt
+   ```
+   Tixati has no import for this filter, so lines are added by hand.
+
+### qBittorrent / qBittorrent Enhanced (Windows)
+
+qBittorrent cannot load a filter from a URL, so a script keeps it updated.
+
+1. Download the script and run it once in PowerShell:
+   ```powershell
+   iwr https://raw.githubusercontent.com/Gesugao-san/rulesets/release/qbittorrent/update-ipfilter.ps1 -OutFile "$env:LOCALAPPDATA\qBittorrent\update-ipfilter.ps1"
+   powershell -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\qBittorrent\update-ipfilter.ps1"
+   ```
+   Plain qBittorrent: add `-SkipPeerBlacklist` to the second command.
+2. qBittorrent → **Options → Connection → IP Filtering** → enable, and paste this path into the file dialog:
+   ```
+   %LOCALAPPDATA%\qBittorrent\rulesets-ipfilter.p2p
+   ```
+3. Daily update via Task Scheduler (run once):
+   ```powershell
+   $a = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$env:LOCALAPPDATA\qBittorrent\update-ipfilter.ps1`""
+   Register-ScheduledTask -TaskName 'rulesets qBittorrent' -Action $a -Trigger (New-ScheduledTaskTrigger -Daily -At 4:20)
+   ```
+
+Enhanced reads `peer_blacklist.txt` only at startup: restart qBittorrent after an update (the script exits with code 2 and never touches the process).
+The script never creates `peer_whitelist.txt`: if that file exists, Enhanced lets through only the peers listed in it.
+
+### Pinning a build
+
+Every build that changes `release` is also tagged `build-YYYY-MM-DD-N` (N is the CI run number).
+To pin a client to a build or roll back, use `/<tag>/` instead of `/release/` in the link.
+Throne profiles inside a tag still load `.srs` from the `release` branch.
+
+The `release` branch has its own `README.md` and `README.ru.md` with direct links to every file.
+
 ## Editing
 
 1. Edit `rules.yml` (the GitHub web editor is fine).
@@ -39,53 +113,6 @@ python3 tools/build.py --out dist                      # without .srs
 python3 tools/build.py --out dist --sing-box sing-box  # with .srs
 python3 -m unittest tools/test_build.py -v
 ```
-
-## Usage
-
-Below, `$R` = `https://raw.githubusercontent.com/Gesugao-san/rulesets/release`.
-
-Every build that changes `release` is also tagged `build-YYYY-MM-DD-N` (N is the CI run number).
-To pin a client to a build or roll back, use `/<tag>/` instead of `/release/` in the link.
-Throne profiles inside a tag still load `.srs` from the `release` branch.
-
-The `release` branch has its own `README.md` and `README.ru.md` with direct links to every file.
-
-### podkop
-
-Aggregated files pick up new lists automatically, no router reconfiguration needed.
-
-- Section with connection type **Block** → `remote_subnet_lists`: `$R/podkop/all-block.subnets.lst`
-- Section **Proxy** → `remote_domain_lists`: `$R/podkop/all-proxy.domains.lst`
-
-IPv6 is not exported to podkop: its subnet `.lst` accepts IPv4 only (CI shows a warning in the run summary).
-
-### Throne
-
-Routes → new **remote** profile → URL `$R/throne/selective.txt`, enable auto-update.
-
-On every update Throne overwrites the rules of a remote profile — keep personal rules in a separate local profile.
-Throne rewrites `raw.githubusercontent.com` links to jsDelivr, so changes arrive with a cache delay.
-
-### Tixati
-
-- **IP Filter** icon → Add → URL `$R/tixati/all-block.txt`, set an auto-reload interval.
-- Settings → Peers → Client Filter → **Peer ID** tab → "never allow": one line each from `$R/tixati/peerid-filter.txt` (manually, Tixati has no import).
-
-### qBittorrent / qBittorrent Enhanced
-
-qBittorrent cannot load a filter from a URL, so a script keeps it updated:
-
-```powershell
-.\update-ipfilter.ps1                      # Enhanced: ipfilter + peer_blacklist
-.\update-ipfilter.ps1 -SkipPeerBlacklist   # plain qBittorrent
-```
-
-Point qBittorrent to the filter once: Options → Connection → IP Filtering → path
-`%LOCALAPPDATA%\qBittorrent\gesu-ipfilter.p2p`. A Task Scheduler example is in the script header.
-
-Enhanced reads `peer_blacklist.txt` only at startup, so a restart is needed after an update
-(the script signals this with exit code 2 and never touches the process). The script never creates
-`peer_whitelist.txt`: if that file exists, Enhanced lets through only the peers listed in it.
 
 ## What is not here and why
 
