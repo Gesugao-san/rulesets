@@ -5,19 +5,21 @@
 Filtering and routing rules kept in one place: all lists live in [`rules.yaml`](rules.yaml),
 and CI builds every client format from it into the [`release`](../../tree/release) branch.
 
-| Format | Contents | Clients | Where in `release` |
-|---|---|---|---|
-| `.srs`, `.json` | sing-box rule-set (version 3): domains and IP subnets | [sing-box](https://sing-box.sagernet.org) — any<br>[Karing](https://github.com/KaringX/karing) — Android, iOS, Windows, macOS, Linux<br>[Throne](https://github.com/throneproj/Throne) and [NekoBox](https://github.com/qr243vbi/nekobox) load it by link | `sing-box/` |
-| `throne://route/…`<br>`throne://remoteroute/…` | route profile with links to the `.srs` files;<br>one-step link that subscribes to it | [Throne](https://github.com/throneproj/Throne) — Windows, Linux, macOS | `throne/` |
-| `ruleset:<link>` lines | links to the `.srs` files, one line per list | [NekoBox](https://github.com/qr243vbi/nekobox) — Windows, Linux | `nekobox/desktop-*` |
-| `domain:` and CIDR lines | domains and IP subnets to paste by hand | [NekoBox for Android](https://github.com/MatsuriDayo/NekoBoxForAndroid) — Android | `nekobox/android-*` |
-| `.lst` | domains and IPv4 subnets, one per line, per list and aggregated per action | [podkop](https://github.com/itdoginfo/podkop) — OpenWrt | `podkop/` |
-| `label:CIDR` | IP filter, IPv4 and IPv6 | [Tixati](https://www.tixati.com) — Windows, Linux | `tixati/*.txt` |
-| `.p2p` (`label:start-end`) | IP filter, IPv4 and IPv6 | [qBittorrent](https://www.qbittorrent.org), [qBittorrent Enhanced](https://github.com/c0re100/qBittorrent-Enhanced-Edition) — Windows, Linux, macOS | `qbittorrent/ipfilter.p2p` |
-| Peer ID `-XX0001-*` | Peer ID filter lines | [Tixati](https://www.tixati.com) | `tixati/peerid-filter.txt` |
-| Peer ID regex | `^-XX0001- .*` lines | [qBittorrent Enhanced](https://github.com/c0re100/qBittorrent-Enhanced-Edition) | `qbittorrent/peer_blacklist.txt` |
-| `.ps1` | update script for the IP filter and Peer ID list | [qBittorrent](https://www.qbittorrent.org), [qBittorrent Enhanced](https://github.com/c0re100/qBittorrent-Enhanced-Edition) — Windows | `qbittorrent/update-ipfilter.ps1` |
-| `.txt`, `.csv` | expanded `asn`/`country`/`continent` prefixes; origin AS report | for review, not for clients | `resolved/`, `review.csv` |
+| Format | Contents | Client → file in `release` |
+|---|---|---|
+| sing-box binary rule-set `.srs` | domains and IP subnets | [sing-box](https://sing-box.sagernet.org) (any) → `sing-box/<list>.srs`<br>[Karing](https://github.com/KaringX/karing) (Android, iOS, Windows, macOS, Linux) → same file<br>[Throne](https://github.com/throneproj/Throne), [NekoBox](https://github.com/qr243vbi/nekobox) load it by link |
+| sing-box rule-set source `.json` (version 3) | the same, human-readable | [sing-box](https://sing-box.sagernet.org) → `sing-box/<list>.json` |
+| Throne route-profile link `throne://route/…` | profile with links to the `.srs` files | [Throne](https://github.com/throneproj/Throne) (Windows, Linux, macOS) → `throne/selective.txt` |
+| Throne remote-routes link `throne://remoteroute/…` | one-step subscription to the profile above | [Throne](https://github.com/throneproj/Throne) → `throne/selective.remoteroute.txt` |
+| NekoBox / Throne simple rules `ruleset:<link>` | `.srs` links, one line per list | [NekoBox](https://github.com/qr243vbi/nekobox) (Windows, Linux) → `nekobox/desktop-<action>.txt` |
+| v2ray-style routing lines `domain:` / CIDR | domains and IP subnets to paste by hand | [NekoBox for Android](https://github.com/MatsuriDayo/NekoBoxForAndroid) (Android) → `nekobox/android-<action>.domains.txt`, `….ips.txt` |
+| plain list `.lst` | one domain or IPv4 subnet per line | [podkop](https://github.com/itdoginfo/podkop) (OpenWrt) → `podkop/all-<action>.domains.lst`, `….subnets.lst` |
+| P2P with CIDR `.p2p.txt` (`label:CIDR`) | IP filter, IPv4 and IPv6 | [Tixati](https://www.tixati.com) (Windows, Linux) → `tixati/all-block.txt` |
+| PeerGuardian P2P `.p2p` (`label:start-end`) | IP filter, IPv4 and IPv6 | [qBittorrent](https://www.qbittorrent.org), [qBittorrent Enhanced](https://github.com/c0re100/qBittorrent-Enhanced-Edition) (Windows, Linux, macOS) → `qbittorrent/ipfilter.p2p` |
+| Peer ID filter: wildcard / PCRE | Peer ID prefixes of spy clients | [Tixati](https://www.tixati.com) → `tixati/peerid-filter.txt` (`-XX0001-*`)<br>[qBittorrent Enhanced](https://github.com/c0re100/qBittorrent-Enhanced-Edition) → `qbittorrent/peer_blacklist.txt` (`^-XX0001- .*`) |
+| PowerShell script `.ps1` | updates the IP filter and the Peer ID list | [qBittorrent](https://www.qbittorrent.org), [qBittorrent Enhanced](https://github.com/c0re100/qBittorrent-Enhanced-Edition) (Windows) → `qbittorrent/update-ipfilter.ps1` |
+| URL list `.txt` | links to external `.srs` (`ruleset:` entries) | [Karing](https://github.com/KaringX/karing), [sing-box](https://sing-box.sagernet.org), [podkop](https://github.com/itdoginfo/podkop) → `external/all-<action>.txt` |
+| CIDR list `.txt`, `.json`, `.csv` | expanded `asn`/`country`/`continent`, rule-set map, origin-AS report | for review, not for clients → `resolved/`, `review.csv` |
 
 The full list of files with links is in `README.md` and `index.json` on the `release` branch.
 
