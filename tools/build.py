@@ -10,6 +10,7 @@ Output (the --out directory, published by CI to the `release` branch):
   index.json, README.md
 
   resolved/     <AS…|country-…|continent-…>.txt — prefixes behind asn/country/continent entries
+  review.csv    origin AS of every ip entry, to decide by hand whether an asn entry fits
 
 Usage:
   python3 tools/build.py --rules rules.yaml --out dist [--sing-box /path/to/sing-box] [--snapshot prev-release]
@@ -24,6 +25,8 @@ from __future__ import annotations
 
 import argparse
 import base64
+import csv
+import io
 import ipaddress
 import json
 import re
@@ -531,7 +534,12 @@ def release_readme(meta: dict, files: list[str], warnings: list[str], texts: dic
     texts["pin"].format(branch=meta["branch"]),
     "",
   ]
-  for folder in sorted({f.split("/")[0] for f in files}):
+  # Root-level files (review.csv) first, without a heading, then one section per folder.
+  root = [f for f in sorted(files) if "/" not in f]
+  if root:
+    lines += [f"- [`{f}`]({raw_url(meta, f)})" for f in root]
+    lines.append("")
+  for folder in sorted({f.split("/")[0] for f in files if "/" in f}):
     lines += [f"## {folder}", ""]
     lines += [f"- [`{f}`]({raw_url(meta, f)})" for f in sorted(files) if f.startswith(folder + "/")]
     lines.append("")
@@ -578,6 +586,52 @@ def gen_resolved(out: Path, resolver: Resolver) -> list[str]:
   return files
 
 
+REVIEW_COLUMNS = ["list", "action", "entry", "announced_prefix", "origin_asn", "holder", "as_prefixes", "verdict"]
+
+
+def review_verdict(rl: RuleList, info: dict, size: int | None) -> str:
+  """Plain-language hint for one ip entry; the decision stays with a human."""
+  asns = [asn for asn, _ in info["asns"]]
+  listed = {value for kind, value, _ in rl.sources if kind == "asn"}
+  checks = [
+    (not info["announced"], "not announced in BGP"),
+    (len(asns) > 1, "several origin ASes (anycast or MOAS): do not use asn"),
+    (bool(asns) and asns[0] in listed, "already covered by an asn entry"),
+    (size is not None and size <= SOURCE_KINDS["asn"], f"small AS ({size} prefixes): an asn entry is possible"),
+    (size is not None, f"large AS ({size} prefixes): keep the ip entry"),
+  ]
+  return next((text for hit, text in checks if hit), "no data")
+
+
+def gen_review(out: Path, lists: dict[str, RuleList], resolver: Resolver, warnings: list[str]) -> list[str]:
+  """review.csv: origin AS of every explicit ip entry. Informational, never blocks anything."""
+  rows = []
+  for rl in lists.values():
+    for net in rl.networks:
+      try:
+        info = resolver.origin(net)
+        size = resolver.as_size(info["asns"][0][0]) if len(info["asns"]) == 1 else None
+      except Exception as exc:  # the report must never break the build
+        warnings.append(f"review: {net}: lookup failed ({exc})")
+        rows.append([rl.name, rl.action, str(net), "", "", "", "", f"lookup failed: {exc}"])
+        continue
+      rows.append([
+        rl.name, rl.action, str(net), info["prefix"],
+        " ".join(f"AS{asn}" for asn, _ in info["asns"]),
+        " / ".join(holder for _, holder in info["asns"]),
+        "" if size is None else str(size),
+        review_verdict(rl, info, size),
+      ])
+  if not rows:
+    return []
+  buf = io.StringIO()
+  writer = csv.writer(buf, lineterminator="\n")
+  writer.writerow(REVIEW_COLUMNS)
+  writer.writerows(rows)
+  (out / "review.csv").write_text(buf.getvalue(), encoding="utf-8", newline="\n")
+  return ["review.csv"]
+
+
 def build(rules_path: Path, out: Path, sing_box: str | None, resolver: Resolver | None = None) -> tuple[list[str], list[str]]:
   """Full build: validation, expansion of asn/country/continent, cleanup, all generators."""
   meta, all_lists, profiles = load_rules(rules_path)
@@ -598,6 +652,7 @@ def build(rules_path: Path, out: Path, sing_box: str | None, resolver: Resolver 
   files += gen_nekobox(out, meta, lists)
   files += gen_tixati(out, lists, warnings)
   files += gen_qbittorrent(out, lists)
+  files += gen_review(out, lists, resolver, warnings)
   if not sing_box:
     warnings.append("sing-box not given: .srs files were not built, Throne profiles point to missing files")
   gen_index(out, meta, files, warnings)

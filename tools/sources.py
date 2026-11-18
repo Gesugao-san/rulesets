@@ -74,6 +74,7 @@ class Resolver:
     self.snapshot_dir = snapshot_dir
     self.continents = load_continents()
     self.cache: dict[str, list[Network]] = {}
+    self.sizes: dict[int, int] = {}
     self.warnings: list[str] = []
 
   # ------------------------------------------------------------ fetchers
@@ -96,6 +97,23 @@ class Resolver:
     for cc in countries:
       nets += self.resolve("country", cc)
     return nets
+
+  # ------------------------------------------------------------ review
+
+  def origin(self, net: Network) -> dict:
+    """Announced prefix covering `net` and its origin ASes (RIPEstat prefix-overview)."""
+    data = self.fetch("prefix-overview", {"resource": str(net)})
+    return {
+      "prefix": data.get("resource", ""),
+      "announced": bool(data.get("announced")),
+      "asns": [(a["asn"], a.get("holder", "")) for a in data.get("asns", [])],
+    }
+
+  def as_size(self, asn: int) -> int:
+    """Number of prefixes an AS announces; kept apart from the blocking cache."""
+    if asn not in self.sizes:
+      self.sizes[asn] = len(self._asn(asn))
+    return self.sizes[asn]
 
   # ------------------------------------------------------------ public
 

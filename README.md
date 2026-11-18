@@ -185,6 +185,10 @@ A publish that changes nothing in `release` creates no commit, no tag and no Git
 If RIPEstat is unreachable, the previous snapshot from `release` is reused with a warning; with no snapshot the build fails rather than publish an empty list.
 CI also rebuilds daily, because prefixes change without edits to `rules.yaml`.
 
+`release/review.csv` lists every `ip` entry with the announced prefix covering it, its origin AS
+([RIPEstat prefix-overview](https://stat.ripe.net/docs/data-api/api-endpoints/prefix-overview)) and how many prefixes that AS announces.
+It only informs: whether a small, dedicated AS deserves an `asn` entry is decided by hand. A failed lookup is a warning, not a build failure.
+
 ## What is not here and why
 
 - **Peer ID filtering for podkop and Throne** — only IPs and domains are visible at the network level.

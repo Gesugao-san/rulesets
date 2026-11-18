@@ -87,8 +87,13 @@ def fake_fetch(endpoint: str, params: dict) -> dict:
       # One live prefix, one withdrawn before the end of the window.
       "AS3333": [("8.8.4.0/24", END), ("8.8.8.0/24", "2026-11-05T00:00:00")],
       "AS15169": [(f"8.{i}.0.0/16", END) for i in range(0, 40, 2)],
+      "AS61400": [(f"185.{i}.0.0/16", END) for i in range(20, 110)],
     }.get(resource, [])
     return {"query_endtime": END, "prefixes": [{"prefix": p, "timelines": [{"starttime": "x", "endtime": e}]} for p, e in prefixes]}
+  if endpoint == "prefix-overview":
+    origins = {"185.16.215.0/24": ("185.16.212.0/22", [61400]), "31.200.249.0/24": ("31.200.249.0/24", [216158])}
+    prefix, asns = origins.get(resource, ("", []))
+    return {"resource": prefix, "announced": bool(asns), "asns": [{"asn": a, "holder": f"holder {a}"} for a in asns]}
   if endpoint == "country-resource-list":
     blocks = {"AQ": ["1.0.0.0/24"], "BV": ["1.0.1.0/24", "2001:4860::/32"]}.get(resource, [])
     return {"resources": {"ipv4": [b for b in blocks if ":" not in b], "ipv6": [b for b in blocks if ":" in b], "asn": []}}
@@ -499,6 +504,29 @@ class OutputTests(unittest.TestCase):
     for rel in (f for f in self.files if f.startswith("nekobox/android-") and f.endswith(".domains.txt")):
       for line in self.read(rel):
         self.assertRegex(line, r"^domain:[a-z0-9.-]+$")
+
+  def test_review_csv(self):
+    import csv as csvmod
+    rows = list(csvmod.DictReader((self.out / "review.csv").open(encoding="utf-8", newline="")))
+    self.assertEqual(list(rows[0]), build.REVIEW_COLUMNS)
+    by_entry = {r["entry"]: r for r in rows}
+    hosting = by_entry["185.16.215.0/24"]
+    self.assertEqual((hosting["origin_asn"], hosting["announced_prefix"], hosting["as_prefixes"]), ("AS61400", "185.16.212.0/22", "90"))
+    self.assertIn("large AS", hosting["verdict"])
+    explicit = sum(len(rl.networks) for rl in self.lists.values())
+    self.assertEqual(len(rows), explicit)
+
+  def test_review_verdicts(self):
+    rl = build.RuleList(name="x", action="block", title="x", sources=[("asn", 216158, 4)])
+    cases = [
+      ({"announced": False, "asns": []}, None, "not announced"),
+      ({"announced": True, "asns": [(1, "a"), (2, "b")]}, None, "several origin"),
+      ({"announced": True, "asns": [(216158, "t")]}, 1, "already covered"),
+      ({"announced": True, "asns": [(3333, "r")]}, 3, "small AS"),
+      ({"announced": True, "asns": [(61400, "s")]}, 90, "large AS"),
+    ]
+    for info, size, expected in cases:
+      self.assertIn(expected, build.review_verdict(rl, info, size))
 
   def test_index_lists_everything(self):
     index = json.loads((self.out / "index.json").read_text(encoding="utf-8"))
