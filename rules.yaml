@@ -98,6 +98,9 @@ lists:
     action: direct
     title: Russian services that must go direct (banks, government, shops, carriers)
     entries:
+      - ruleset: geosite-category-gov-ru
+      - ruleset: geosite-ru-available-only-inside
+        note: runetfreedom, sites reachable only from inside Russia
       - domain: alfabank.ru
       - domain: beeline.ru
       - domain: burgerkingrus.ru
@@ -219,6 +222,8 @@ lists:
       - domain: dis.gd
       - domain: discord.me
       - domain: disboard.org
+      - domain: discord-attachments-uploads-prd.storage.googleapis.com
+        sld_exception: Discord attachments bucket; storage.googleapis.com hosts unrelated buckets
 
   youtube:
     action: proxy
@@ -268,6 +273,13 @@ lists:
       - ruleset: geosite-fastly
       - ruleset: geosite-jetbrains
       - ruleset: geosite-archive
+      - ruleset: geosite-anthropic
+      - ruleset: geosite-google-gemini
+      - ruleset: geosite-whatsapp
+      - ruleset: geosite-spotify
+      - ruleset: geosite-twitch
+      - ruleset: geosite-reddit
+      - ruleset: geosite-linkedin
       # AI
       - domain: openai.com
       - domain: chatgpt.com
@@ -317,7 +329,6 @@ lists:
       - domain: akamaitechnologies.com
       - domain: digitaloceanspaces.com
       - domain: gvt1.com
-      - domain: storage.googleapis.com
       - domain: fastly.com
       - domain: wsimg.com
       - domain: wixmp.com
@@ -383,7 +394,6 @@ lists:
       - domain: tiekoetter.com
       - domain: temp-mail.org
       - domain: vknext.net
-      # Amnezia mirror https://storage.googleapis.com/amnezia/amnezia.org is covered by storage.googleapis.com above.
       # Media, art, reading
       - domain: bbc.com
       - domain: spotify.com
@@ -426,6 +436,22 @@ lists:
       - domain: bestchange.net
       - domain: bestchange.ru
 
+  ru-blocked:
+    action: proxy
+    title: Domains blocked in Russia (runetfreedom, broad)
+    entries:
+      - ruleset: geosite-ru-blocked
+        note: >-
+          runetfreedom/russia-v2ray-rules-dat: antifilter.download community list + re:filter,
+          refreshed every 6 hours; ~0.5 MB .srs. Not ru-blocked-all (700k+ domains).
+
+  ru-broad:
+    action: direct
+    title: Everything else Russian goes direct (broad; evaluated after the precise lists)
+    entries:
+      - ruleset: geosite-category-ru
+      - ruleset: geoip-ru
+
   # Example of every entry kind. `enabled: false`: validated on every build, never published.
   # Copy entries from here into a real list; the values are illustrative.
   example:
@@ -460,5 +486,6 @@ profiles:
       name: Gesu selective
       default_outbound: direct
       # Order matters: rules are applied top to bottom.
-      lists: [p2p-spies, ads, ru-direct, telegram, discord, youtube, services, ru-extra]
+      # Precise lists first, broad ones last: an explicit choice always beats a big external set.
+      lists: [p2p-spies, ads, ru-direct, telegram, discord, youtube, services, ru-extra, ru-blocked, ru-broad]
 
